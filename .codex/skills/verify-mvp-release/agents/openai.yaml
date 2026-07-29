@@ -1,0 +1,4 @@
+interface:
+  display_name: "MVP 출시 준비 검증"
+  short_description: "PRD 수용 기준·접근성·회귀와 Vercel 출시 준비를 검증"
+  default_prompt: "Use $verify-mvp-release to assess this change or build against MVP release criteria."

@@ -1,0 +1,5 @@
+interface:
+  display_name: "포인트·정산 안전성 검증"
+  short_description: "포인트 원장과 예치·환불·정산 불변식을 안전하게 검증"
+  default_prompt: "Use $secure-point-settlement to review this points or settlement change for safety and idempotency."
+

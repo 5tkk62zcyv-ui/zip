@@ -1,0 +1,5 @@
+interface:
+  display_name: "PRD 기능 개발 조정"
+  short_description: "PRD 요구사항별 에이전트와 공식 Vercel 스킬을 조정"
+  default_prompt: "Use $deliver-prd-feature to implement the requested PRD feature with the right reviewers and verification."
+

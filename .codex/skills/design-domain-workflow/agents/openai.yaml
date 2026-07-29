@@ -1,0 +1,5 @@
+interface:
+  display_name: "도메인 상태 전이 설계"
+  short_description: "모집·참여 상태와 권한·예외 흐름을 PRD 기준으로 설계"
+  default_prompt: "Use $design-domain-workflow to analyze feature states, permissions, and invariants."
+

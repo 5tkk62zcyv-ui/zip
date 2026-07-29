@@ -1,0 +1,5 @@
+interface:
+  display_name: "Next.js 기능 구현"
+  short_description: "Next.js 16과 기존 모바일 패턴으로 PRD 기능을 구현"
+  default_prompt: "Use $implement-nextjs-feature to implement this PRD feature in the current Next.js application."
+
