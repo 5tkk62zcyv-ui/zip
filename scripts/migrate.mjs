@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Pool } from '@neondatabase/serverless'
 
@@ -11,32 +11,22 @@ const expectedFingerprint = process.env.DATABASE_FINGERPRINT
 const expectedMigrationRole = process.env.DATABASE_EXPECTED_MIGRATION_ROLE
 
 if (!databaseUrl) {
-  throw new Error(
-    'DATABASE_MIGRATION_URL is required. Do not use the runtime credential for migrations.',
-  )
+  throw new Error('DATABASE_MIGRATION_URL is required. Do not use the runtime credential for migrations.')
 }
-
 if (!appEnvironment || !allowedEnvironments.has(appEnvironment)) {
-  throw new Error(
-    'APP_ENVIRONMENT must be one of development, preview, or production.',
-  )
+  throw new Error('APP_ENVIRONMENT must be one of development, preview, or production.')
+}
+if (!expectedDatabaseName || !expectedFingerprint || !expectedMigrationRole) {
+  throw new Error('Expected database name, fingerprint, and migration role are required.')
 }
 
-if (!expectedDatabaseName) {
-  throw new Error('DATABASE_EXPECTED_NAME is required as a migration safety guard.')
-}
+const migrationDirectory = resolve('db/migrations')
+const migrationFiles = (await readdir(migrationDirectory))
+  .filter((file) => /^\d{4}_[a-z0-9_]+\.sql$/.test(file))
+  .sort()
 
-if (!expectedFingerprint || !expectedMigrationRole) {
-  throw new Error(
-    'DATABASE_FINGERPRINT and DATABASE_EXPECTED_MIGRATION_ROLE are required.',
-  )
-}
+if (!migrationFiles.length) throw new Error('No migrations found.')
 
-const version = '0001_users_and_sessions'
-const migrationPath = resolve(`db/migrations/${version}.sql`)
-const migration = await readFile(migrationPath, 'utf8')
-const checksum = createHash('sha256').update(migration).digest('hex')
-const advisoryLockId = 842_027_001
 const pool = new Pool({ connectionString: databaseUrl, max: 1 })
 const client = await pool.connect()
 
@@ -44,21 +34,16 @@ try {
   await client.query('BEGIN')
   await client.query(`SET LOCAL lock_timeout = '10s'`)
   await client.query(`SET LOCAL statement_timeout = '60s'`)
-  await client.query('SELECT pg_advisory_xact_lock($1)', [advisoryLockId])
+  await client.query('SELECT pg_advisory_xact_lock($1)', [842_027_001])
 
   const identity = await client.query(
     'SELECT current_database() AS database_name, current_user AS database_user',
   )
-  const actualDatabaseName = identity.rows[0]?.database_name
-  const actualDatabaseRole = identity.rows[0]?.database_user
-
   if (
-    actualDatabaseName !== expectedDatabaseName ||
-    actualDatabaseRole !== expectedMigrationRole
+    identity.rows[0]?.database_name !== expectedDatabaseName ||
+    identity.rows[0]?.database_user !== expectedMigrationRole
   ) {
-    throw new Error(
-      `Database guard failed for name or migration role.`,
-    )
+    throw new Error('Database guard failed for name or migration role.')
   }
 
   await client.query(`
@@ -71,7 +56,6 @@ try {
         CHECK (environment IN ('development', 'preview', 'production'))
     )
   `)
-
   await client.query(`
     CREATE TABLE IF NOT EXISTS application_environment (
       singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
@@ -82,98 +66,58 @@ try {
         CHECK (environment IN ('development', 'preview', 'production'))
     )
   `)
-
   await client.query(
-    `
-      INSERT INTO application_environment (singleton, environment, fingerprint)
-      VALUES (true, $1, $2)
-      ON CONFLICT (singleton) DO NOTHING
-    `,
+    `INSERT INTO application_environment (singleton, environment, fingerprint)
+     VALUES (true, $1, $2) ON CONFLICT (singleton) DO NOTHING`,
     [appEnvironment, expectedFingerprint],
   )
-
-  const environmentIdentity = await client.query(`
-    SELECT environment, fingerprint
-    FROM application_environment
-    WHERE singleton = true
-  `)
-  const storedIdentity = environmentIdentity.rows[0]
-
+  const environmentIdentity = await client.query(
+    `SELECT environment, fingerprint FROM application_environment WHERE singleton = true`,
+  )
   if (
-    storedIdentity?.environment !== appEnvironment ||
-    storedIdentity?.fingerprint !== expectedFingerprint
+    environmentIdentity.rows[0]?.environment !== appEnvironment ||
+    environmentIdentity.rows[0]?.fingerprint !== expectedFingerprint
   ) {
     throw new Error('Database environment fingerprint mismatch.')
   }
 
-  const existing = await client.query(
-    `
-      SELECT checksum, environment
-      FROM schema_migrations
-      WHERE version = $1
-    `,
-    [version],
-  )
-
-  if (existing.rowCount) {
-    const applied = existing.rows[0]
-    if (applied.checksum !== checksum) {
-      throw new Error(`Migration checksum drift detected for ${version}.`)
+  for (const file of migrationFiles) {
+    const version = file.slice(0, -4)
+    const migration = await readFile(resolve(migrationDirectory, file), 'utf8')
+    const checksum = createHash('sha256').update(migration).digest('hex')
+    const existing = await client.query(
+      `SELECT checksum, environment FROM schema_migrations WHERE version = $1`,
+      [version],
+    )
+    if (existing.rowCount) {
+      if (
+        existing.rows[0].checksum !== checksum ||
+        existing.rows[0].environment !== appEnvironment
+      ) {
+        throw new Error(`Migration checksum or environment drift detected for ${version}.`)
+      }
+      continue
     }
-    if (applied.environment !== appEnvironment) {
-      throw new Error(
-        `Migration environment mismatch for ${version}: ${applied.environment}.`,
-      )
-    }
-    await client.query('COMMIT')
-    console.log(`Migration ${version} is already applied with matching checksum.`)
-  } else {
     await client.query(migration)
     await client.query(
-      `
-        INSERT INTO schema_migrations (version, checksum, environment)
-        VALUES ($1, $2, $3)
-      `,
+      `INSERT INTO schema_migrations (version, checksum, environment) VALUES ($1, $2, $3)`,
       [version, checksum, appEnvironment],
     )
-
-    const verification = await client.query(`
-      SELECT
-        to_regclass('public.users') IS NOT NULL AS users_exists,
-        to_regclass('public.auth_sessions') IS NOT NULL AS sessions_exists,
-        (
-          SELECT count(*) = 0
-          FROM users
-          WHERE nullif(btrim(student_id), '') IS NULL
-             OR student_id <> btrim(student_id)
-             OR nullif(btrim(name), '') IS NULL
-             OR nullif(btrim(school_email), '') IS NULL
-        ) AS users_valid,
-        (
-          SELECT count(*) = 0
-          FROM auth_sessions s
-          LEFT JOIN users u ON u.user_id = s.user_id
-          WHERE u.user_id IS NULL
-             OR s.expires_at <= s.created_at
-             OR s.revoked_at < s.created_at
-        ) AS sessions_valid
-    `)
-    const result = verification.rows[0]
-
-    if (
-      !result?.users_exists ||
-      !result?.sessions_exists ||
-      !result?.users_valid ||
-      !result?.sessions_valid
-    ) {
-      throw new Error(`Post-migration verification failed for ${version}.`)
-    }
-
-    await client.query('COMMIT')
-    console.log(
-      `Applied ${version} to ${actualDatabaseName} as ${identity.rows[0]?.database_user}.`,
-    )
+    console.log(`Applied ${version}.`)
   }
+
+  const required = await client.query(`
+    SELECT
+      to_regclass('public.users') IS NOT NULL AS users_exists,
+      to_regclass('public.trip_groups') IS NOT NULL AS trips_exist,
+      to_regclass('public.point_accounts') IS NOT NULL AS accounts_exist,
+      to_regclass('public.point_ledger') IS NOT NULL AS ledger_exists
+  `)
+  if (Object.values(required.rows[0] ?? {}).some((value) => value !== true)) {
+    throw new Error('Post-migration verification failed.')
+  }
+  await client.query('COMMIT')
+  console.log(`All migrations are current on ${expectedDatabaseName}.`)
 } catch (error) {
   await client.query('ROLLBACK')
   throw error

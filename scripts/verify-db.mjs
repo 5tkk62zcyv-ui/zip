@@ -44,6 +44,11 @@ try {
       to_regclass('public.users') IS NOT NULL AS users_exists,
       to_regclass('public.auth_sessions') IS NOT NULL AS sessions_exists,
       to_regclass('public.schema_migrations') IS NOT NULL AS migrations_exists,
+      to_regclass('public.trip_groups') IS NOT NULL AS trips_exists,
+      to_regclass('public.trip_participants') IS NOT NULL AS participants_exists,
+      to_regclass('public.trip_settlements') IS NOT NULL AS settlements_exists,
+      to_regclass('public.point_accounts') IS NOT NULL AS point_accounts_exists,
+      to_regclass('public.point_ledger') IS NOT NULL AS point_ledger_exists,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -73,7 +78,26 @@ try {
         WHERE schemaname = 'public'
           AND tablename = 'auth_sessions'
           AND indexname = 'auth_sessions_expires_at_idx'
-      ) AS expiry_index_exists
+      ) AS expiry_index_exists,
+      (
+        SELECT count(*) = 0
+        FROM point_accounts
+        WHERE available_points < 0 OR held_points < 0
+      ) AS balances_nonnegative,
+      (
+        SELECT count(*) = 0
+        FROM point_accounts a
+        LEFT JOIN (
+          SELECT
+            user_id,
+            sum(available_delta) AS available_points,
+            sum(held_delta) AS held_points
+          FROM point_ledger
+          GROUP BY user_id
+        ) l ON l.user_id = a.user_id
+        WHERE a.available_points <> COALESCE(l.available_points, 0)
+           OR a.held_points <> COALESCE(l.held_points, 0)
+      ) AS ledger_balances_match
   `, [expectedEnvironment, expectedFingerprint])
 
   const verification = result.rows[0]
