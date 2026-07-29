@@ -7,9 +7,7 @@ export const signupSchema = z.object({
   studentId: z
     .string()
     .trim()
-    .min(1, '학번을 입력해주세요.')
-    .max(32, '학번은 32자 이하여야 합니다.')
-    .regex(/^[A-Za-z0-9-]+$/, '학번은 영문, 숫자, 하이픈만 사용할 수 있어요.'),
+    .regex(/^\d{9}$/, '학번은 숫자 9자리로 입력해주세요.'),
   name: z
     .string()
     .trim()
@@ -19,9 +17,15 @@ export const signupSchema = z.object({
     error: '성별을 선택해주세요.',
   }),
   schoolEmail: z
-    .email('올바른 학교 이메일을 입력해주세요.')
+    .string()
+    .trim()
+    .toLowerCase()
     .max(320, '이메일이 너무 깁니다.')
-    .transform((value) => value.trim().toLowerCase()),
+    .email('올바른 학교 이메일을 입력해주세요.')
+    .regex(
+      /^[^@]+@jbnu\.ac\.kr$/,
+      '전북대학교 이메일(@jbnu.ac.kr)을 입력해주세요.',
+    ),
   privacyConsent: z.literal('on', {
     error: '개인정보 수집·이용에 동의해주세요.',
   }),

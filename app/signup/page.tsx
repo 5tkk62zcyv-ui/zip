@@ -41,17 +41,27 @@ export default function SignupPage() {
             <input
               id="studentId"
               name="studentId"
-              inputMode="text"
+              inputMode="numeric"
+              pattern="[0-9]{9}"
               autoComplete="off"
               required
-              maxLength={32}
+              minLength={9}
+              maxLength={9}
               aria-invalid={Boolean(state.fieldErrors?.studentId)}
               aria-describedby={
-                state.fieldErrors?.studentId ? 'studentId-error' : undefined
+                state.fieldErrors?.studentId
+                  ? 'studentId-error student-id-help'
+                  : 'student-id-help'
               }
-              placeholder="예: 20213456"
+              placeholder="예: 202134567"
               className="app-input"
             />
+            <p
+              id="student-id-help"
+              className="mt-2 text-xs leading-relaxed text-muted-foreground"
+            >
+              숫자 9자리 학번을 입력해주세요.
+            </p>
           </Field>
 
           <Field id="name" label="이름" error={state.fieldErrors?.name?.[0]}>
@@ -106,6 +116,7 @@ export default function SignupPage() {
               id="schoolEmail"
               name="schoolEmail"
               type="email"
+              pattern="[^@\s]+@[jJ][bB][nN][uU]\.[aA][cC]\.[kK][rR]"
               autoComplete="email"
               required
               maxLength={320}
@@ -123,7 +134,7 @@ export default function SignupPage() {
               className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground"
             >
               <Info className="mt-0.5 size-3.5 shrink-0" />
-              학교 이메일은 소속 정보 확인용이며 별도의 인증 절차는 없어요.
+              @jbnu.ac.kr 학교 이메일이 필요하며 별도의 인증 절차는 없어요.
             </p>
           </Field>
 
