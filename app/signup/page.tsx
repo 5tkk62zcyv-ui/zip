@@ -14,10 +14,7 @@ export default function SignupPage() {
   const [signupAttemptId, setSignupAttemptId] = useState('')
 
   useEffect(() => {
-    const storageKey = 'taxitashare_signup_attempt'
-    const existing = window.localStorage.getItem(storageKey)
-    const attemptId = existing ?? crypto.randomUUID()
-    window.localStorage.setItem(storageKey, attemptId)
+    const attemptId = crypto.randomUUID()
     const timer = window.setTimeout(() => setSignupAttemptId(attemptId), 0)
     return () => window.clearTimeout(timer)
   }, [])
