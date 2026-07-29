@@ -34,11 +34,26 @@ const AppContext = createContext<AppState | null>(null)
 
 let txCounter = 100
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<CurrentUser>(initialUser)
+export function AppProvider({
+  children,
+  authenticatedUser,
+}: {
+  children: ReactNode
+  authenticatedUser?: Pick<
+    CurrentUser,
+    'name' | 'studentId' | 'gender' | 'email'
+  > | null
+}) {
+  const [user] = useState<CurrentUser>(() => ({
+    ...initialUser,
+    ...(authenticatedUser ?? {}),
+    ...(authenticatedUser ? { points: 0, deposited: 0 } : {}),
+  }))
   const [rooms, setRooms] = useState<Room[]>(recommendedRooms)
-  const [history, setHistory] = useState<PointTx[]>(initialHistory)
-  const [joinedRoomIds, setJoinedRoomIds] = useState<string[]>([])
+  const [history, setHistory] = useState<PointTx[]>(
+    authenticatedUser ? [] : initialHistory,
+  )
+  const [joinedRoomIds] = useState<string[]>([])
   const [toasts, setToasts] = useState<
     { id: number; message: string; tone: 'default' | 'success' | 'warn' }[]
   >([])
@@ -60,18 +75,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const depositAndJoin = useCallback(
-    (room: Room) => {
-      setUser((u) => ({
-        ...u,
-        points: u.points - room.perPersonPoints,
-        deposited: u.deposited + room.perPersonPoints,
-      }))
-      setJoinedRoomIds((ids) =>
-        ids.includes(room.id) ? ids : [...ids, room.id],
+    (_room: Room) => {
+      toast(
+        '포인트 예치는 서버 원장 기능이 준비될 때까지 사용할 수 없어요.',
+        'warn',
       )
-      addHistory({ label: '방 참여 예치', amount: -room.perPersonPoints })
     },
-    [addHistory],
+    [toast],
   )
 
   const closeRoom = useCallback((roomId: string) => {
@@ -81,19 +91,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const settleAdjust = useCallback(
-    (delta: number) => {
-      // delta > 0: 추가 차감, delta < 0: 반환
-      setUser((u) => ({
-        ...u,
-        points: u.points - Math.max(delta, 0) + Math.max(-delta, 0),
-        deposited: 0,
-      }))
-      addHistory({
-        label: delta >= 0 ? '최종 정산 추가 차감' : '정산 차액 반환',
-        amount: -delta,
-      })
+    (_delta: number) => {
+      toast(
+        '최종 정산은 서버 원장 기능이 준비될 때까지 사용할 수 없어요.',
+        'warn',
+      )
     },
-    [addHistory],
+    [toast],
   )
 
   const value = useMemo(

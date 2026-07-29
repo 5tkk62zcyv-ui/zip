@@ -2,7 +2,10 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Noto_Sans_KR, Gothic_A1 } from 'next/font/google'
 import { AppProvider } from '@/components/app-provider'
+import { getCurrentUser } from '@/lib/auth/session'
 import './globals.css'
+
+export const dynamic = 'force-dynamic'
 
 const notoSansKr = Noto_Sans_KR({
   subsets: ['latin'],
@@ -30,19 +33,32 @@ export const viewport: Viewport = {
   themeColor: '#FFC72C',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const authenticatedUser = await getCurrentUser()
+
   return (
     <html lang="ko" className={`bg-muted ${notoSansKr.variable} ${gothicA1.variable}`}>
       <body className="font-sans antialiased">
-        <AppProvider>{children}</AppProvider>
+        <AppProvider
+          authenticatedUser={
+            authenticatedUser
+              ? {
+                  name: authenticatedUser.name,
+                  studentId: authenticatedUser.studentId,
+                  gender: authenticatedUser.gender,
+                  email: authenticatedUser.schoolEmail,
+                }
+              : null
+          }
+        >
+          {children}
+        </AppProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

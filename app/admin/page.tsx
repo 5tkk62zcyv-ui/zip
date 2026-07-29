@@ -27,39 +27,16 @@ export default function AdminPage() {
   const [query, setQuery] = useState('')
   const [amount, setAmount] = useState('')
   const [reason, setReason] = useState('')
-  const [grants, setGrants] = useState<GrantRow[]>(adminGrants)
+  const [grants] = useState<GrantRow[]>(adminGrants)
 
   const totalGranted = grants.reduce((sum, g) => sum + g.amount, 0)
 
   function handleGrant(e: React.FormEvent) {
     e.preventDefault()
-    const amt = Number(amount)
-    if (!query.trim()) {
-      toast('학번 또는 이메일을 입력하세요', 'warn')
-      return
-    }
-    if (!Number.isFinite(amt) || amt <= 0) {
-      toast('유효한 포인트 금액을 입력하세요', 'warn')
-      return
-    }
-    const now = new Date()
-    const stamp = `${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    setGrants((g) => [
-      {
-        id: `g${Date.now()}`,
-        name: query.includes('@') ? query.split('@')[0] : '사용자',
-        studentId: query.includes('@') ? '-' : query,
-        email: query.includes('@') ? query : `${query}@jbnu.ac.kr`,
-        amount: amt,
-        reason: reason.trim() || '운영자 직접 지급',
-        date: stamp,
-      },
-      ...g,
-    ])
-    toast(`${formatPoints(amt)} 지급 완료`, 'success')
-    setQuery('')
-    setAmount('')
-    setReason('')
+    toast(
+      '관리자 포인트 지급은 서버 원장 기능이 준비될 때까지 사용할 수 없어요.',
+      'warn',
+    )
   }
 
   return (

@@ -1,137 +1,191 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
-import { Check, Info } from 'lucide-react'
+import { useActionState, useEffect, useState } from 'react'
+import { Info } from 'lucide-react'
 import { MobileShell } from '@/components/mobile-shell'
 import { TopBar } from '@/components/top-bar'
 import { BottomBar, BigButton } from '@/components/bottom-bar'
-import { useApp } from '@/components/app-provider'
-import { cn } from '@/lib/utils'
+import { signupAction, type SignupState } from './actions'
 
-const genders = [
-  { value: 'female', label: '여성' },
-  { value: 'male', label: '남성' },
-  { value: 'none', label: '선택 안 함' },
-]
+const initialState: SignupState = {}
 
 export default function SignupPage() {
-  const router = useRouter()
-  const { toast } = useApp()
-  const [studentId, setStudentId] = useState('')
-  const [name, setName] = useState('')
-  const [gender, setGender] = useState('female')
-  const [email, setEmail] = useState('')
-  const [agree, setAgree] = useState(false)
+  const [state, action, pending] = useActionState(signupAction, initialState)
+  const [signupAttemptId, setSignupAttemptId] = useState('')
 
-  const canSubmit = studentId && name && email && agree
-
-  function handleSubmit() {
-    if (!canSubmit) return
-    toast('가입이 완료되었어요. 환영해요!', 'success')
-    router.push('/home')
-  }
+  useEffect(() => {
+    const storageKey = 'taxitashare_signup_attempt'
+    const existing = window.localStorage.getItem(storageKey)
+    const attemptId = existing ?? crypto.randomUUID()
+    window.localStorage.setItem(storageKey, attemptId)
+    const timer = window.setTimeout(() => setSignupAttemptId(attemptId), 0)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   return (
     <MobileShell withTabBar={false} className="bg-background">
       <TopBar title="회원가입" subtitle="택시타쉐어 이용을 위한 기본 정보" />
 
-      <div className="flex flex-1 flex-col gap-5 px-5 py-6 pb-32">
-        <Field label="학번">
-          <input
-            inputMode="numeric"
-            value={studentId}
-            onChange={(e) => setStudentId(e.target.value)}
-            placeholder="예: 20213456"
-            className="app-input"
-          />
-        </Field>
-
-        <Field label="이름">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="이름을 입력해주세요"
-            className="app-input"
-          />
-        </Field>
-
-        <Field label="성별">
-          <div className="grid grid-cols-3 gap-2">
-            {genders.map((g) => (
-              <button
-                key={g.value}
-                type="button"
-                onClick={() => setGender(g.value)}
-                className={cn(
-                  'rounded-xl border py-3 text-sm font-semibold transition-colors',
-                  gender === g.value
-                    ? 'border-primary bg-primary/15 text-foreground'
-                    : 'border-border bg-card text-muted-foreground',
-                )}
-              >
-                {g.label}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="학교 이메일">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="예: minji@jbnu.ac.kr"
-            className="app-input"
-          />
-          <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 size-3.5 shrink-0" />
-            학교 이메일은 소속 정보 확인을 위해 입력받으며, 별도의 인증 절차는
-            없어요.
-          </p>
-        </Field>
-
-        <button
-          type="button"
-          onClick={() => setAgree((a) => !a)}
-          className="mt-1 flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-left"
+      <form action={action} className="flex flex-1 flex-col">
+        <input
+          type="hidden"
+          name="signupAttemptId"
+          value={signupAttemptId}
+        />
+        <fieldset
+          disabled={pending || !signupAttemptId}
+          className="flex flex-1 flex-col gap-5 px-5 py-6 pb-32 disabled:opacity-70"
         >
-          <span
-            className={cn(
-              'flex size-6 shrink-0 items-center justify-center rounded-md border transition-colors',
-              agree
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border bg-background',
-            )}
+          <Field
+            id="studentId"
+            label="학번"
+            error={state.fieldErrors?.studentId?.[0]}
           >
-            {agree ? <Check className="size-4" /> : null}
-          </span>
-          <span className="text-sm font-medium">
-            개인정보 수집·이용에 동의합니다.
-          </span>
-        </button>
-      </div>
+            <input
+              id="studentId"
+              name="studentId"
+              inputMode="text"
+              autoComplete="off"
+              required
+              maxLength={32}
+              aria-invalid={Boolean(state.fieldErrors?.studentId)}
+              aria-describedby={
+                state.fieldErrors?.studentId ? 'studentId-error' : undefined
+              }
+              placeholder="예: 20213456"
+              className="app-input"
+            />
+          </Field>
 
-      <BottomBar>
-        <BigButton onClick={handleSubmit} disabled={!canSubmit}>
-          가입하고 시작하기
-        </BigButton>
-      </BottomBar>
+          <Field id="name" label="이름" error={state.fieldErrors?.name?.[0]}>
+            <input
+              id="name"
+              name="name"
+              autoComplete="name"
+              required
+              maxLength={80}
+              aria-invalid={Boolean(state.fieldErrors?.name)}
+              aria-describedby={state.fieldErrors?.name ? 'name-error' : undefined}
+              placeholder="이름을 입력해주세요"
+              className="app-input"
+            />
+          </Field>
+
+          <fieldset>
+            <legend className="mb-2 text-sm font-bold">성별</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ['female', '여성'],
+                ['male', '남성'],
+              ].map(([value, label]) => (
+                <label
+                  key={value}
+                  className="cursor-pointer rounded-xl border border-border bg-card py-3 text-center text-sm font-semibold has-[:checked]:border-primary has-[:checked]:bg-primary/15 focus-within:ring-2 focus-within:ring-ring"
+                >
+                  <input
+                    type="radio"
+                    name="gender"
+                    value={value}
+                    required
+                    className="sr-only"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {state.fieldErrors?.gender?.[0] ? (
+              <p className="mt-2 text-xs text-destructive" role="alert">
+                {state.fieldErrors.gender[0]}
+              </p>
+            ) : null}
+          </fieldset>
+
+          <Field
+            id="schoolEmail"
+            label="학교 이메일"
+            error={state.fieldErrors?.schoolEmail?.[0]}
+          >
+            <input
+              id="schoolEmail"
+              name="schoolEmail"
+              type="email"
+              autoComplete="email"
+              required
+              maxLength={320}
+              aria-invalid={Boolean(state.fieldErrors?.schoolEmail)}
+              aria-describedby={
+                state.fieldErrors?.schoolEmail
+                  ? 'schoolEmail-error school-email-help'
+                  : 'school-email-help'
+              }
+              placeholder="예: minji@jbnu.ac.kr"
+              className="app-input"
+            />
+            <p
+              id="school-email-help"
+              className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground"
+            >
+              <Info className="mt-0.5 size-3.5 shrink-0" />
+              학교 이메일은 소속 정보 확인용이며 별도의 인증 절차는 없어요.
+            </p>
+          </Field>
+
+          <label className="mt-1 flex cursor-pointer items-start gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-left focus-within:ring-2 focus-within:ring-ring">
+            <input
+              type="checkbox"
+              name="privacyConsent"
+              required
+              className="mt-0.5 size-5 accent-primary"
+            />
+            <span>
+              <span className="block text-sm font-medium">
+                개인정보 수집·이용에 동의합니다.
+              </span>
+              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                학번·이름·성별·학교 이메일은 가입과 서비스 제공을 위해
+                수집합니다. 보관 기간과 삭제 절차는 출시 전 확정할
+                개인정보처리방침에 따릅니다.
+              </span>
+            </span>
+          </label>
+
+          <p aria-live="polite" className="text-sm text-destructive">
+            {pending ? '가입 정보를 안전하게 저장하고 있어요.' : state.message}
+          </p>
+        </fieldset>
+
+        <BottomBar>
+          <BigButton type="submit" disabled={pending || !signupAttemptId}>
+            {pending ? '가입 처리 중…' : '가입하고 시작하기'}
+          </BigButton>
+        </BottomBar>
+      </form>
     </MobileShell>
   )
 }
 
 function Field({
+  id,
   label,
+  error,
   children,
 }: {
+  id: string
   label: string
+  error?: string
   children: React.ReactNode
 }) {
   return (
     <div>
-      <label className="mb-2 block text-sm font-bold">{label}</label>
+      <label htmlFor={id} className="mb-2 block text-sm font-bold">
+        {label}
+      </label>
       {children}
+      {error ? (
+        <p id={`${id}-error`} className="mt-2 text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -46,19 +46,20 @@ export default function RoomDetailPage() {
     )
   }
 
+  const selectedRoom = room
   const closed = room.status === 'closed'
   const joined = joinedRoomIds.includes(room.id)
   const confirmedCount = Math.min(room.members.length + (joined ? 1 : 0), room.maxSeats)
   const filledPct = (room.members.length / room.maxSeats) * 100
 
   function handleDeposit() {
-    depositAndJoin(room)
+    depositAndJoin(selectedRoom)
     setDepositOpen(false)
-    router.push(`/room/${room.id}/confirm`)
+    router.push(`/room/${selectedRoom.id}/confirm`)
   }
 
   function handleClose() {
-    closeRoom(room.id)
+    closeRoom(selectedRoom.id)
     setCloseOpen(false)
     toast('모집이 마감되었어요.', 'warn')
   }
