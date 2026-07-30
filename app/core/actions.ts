@@ -13,7 +13,9 @@ import {
   confirmFare,
   confirmTripAndDeposit,
   createTrip,
+  fulfillPointRequest,
   grantPoints,
+  requestPoints,
   settleTrip,
   submitActualFare,
 } from '@/lib/core/service'
@@ -251,16 +253,91 @@ export async function depositAction(formData: FormData) {
 export async function grantAction(formData: FormData) {
   const admin = await requireAdmin()
   await execute(
-    () =>
-      grantPoints({
+    async () => {
+      await grantPoints({
         adminId: admin.userId,
         targetUserId: text(formData, 'targetUserId'),
         amount: Number(text(formData, 'amount')),
         reason: text(formData, 'reason'),
         idempotencyKey: text(formData, 'idempotencyKey'),
-      }),
+      })
+    },
     '포인트를 지급했습니다.',
   )
+}
+
+function finishPointPath(
+  path: '/admin' | '/points',
+  message: string,
+  error = false,
+): never {
+  revalidatePath('/admin')
+  revalidatePath('/points')
+  redirect(
+    `${path}?${error ? 'error' : 'message'}=${encodeURIComponent(message)}`,
+  )
+}
+
+export async function grantPointsAction(formData: FormData) {
+  const admin = await requireAdmin()
+  try {
+    await grantPoints({
+      adminId: admin.userId,
+      targetUserId: text(formData, 'targetUserId'),
+      amount: Number(text(formData, 'amount')),
+      reason: text(formData, 'reason'),
+      idempotencyKey: text(formData, 'idempotencyKey'),
+    })
+  } catch (error) {
+    finishPointPath(
+      '/admin',
+      error instanceof CoreError
+        ? error.message
+        : '포인트를 지급하지 못했습니다. 잠시 후 다시 시도해주세요.',
+      true,
+    )
+  }
+  finishPointPath('/admin', '포인트를 지급했습니다.')
+}
+
+export async function requestPointsAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  try {
+    await requestPoints({
+      requesterId: user.userId,
+      amount: Number(text(formData, 'amount')),
+      reason: text(formData, 'reason'),
+      idempotencyKey: text(formData, 'idempotencyKey'),
+    })
+  } catch (error) {
+    finishPointPath(
+      '/points',
+      error instanceof CoreError
+        ? error.message
+        : '포인트 지급 요청을 보내지 못했습니다. 잠시 후 다시 시도해주세요.',
+      true,
+    )
+  }
+  finishPointPath('/points', '관리자에게 포인트 지급을 요청했습니다.')
+}
+
+export async function fulfillPointRequestAction(formData: FormData) {
+  const admin = await requireAdmin()
+  try {
+    await fulfillPointRequest({
+      adminId: admin.userId,
+      requestId: text(formData, 'requestId'),
+    })
+  } catch (error) {
+    finishPointPath(
+      '/admin',
+      error instanceof CoreError
+        ? error.message
+        : '포인트 요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.',
+      true,
+    )
+  }
+  finishPointPath('/admin', '포인트 요청을 승인하고 지급했습니다.')
 }
 
 export async function submitFareAction(formData: FormData) {

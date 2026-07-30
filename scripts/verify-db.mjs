@@ -41,6 +41,9 @@ const recommendationCapacityMigrationChecksum = createHash('sha256')
     ),
   )
   .digest('hex')
+const sprint6PointEscrowMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0010_sprint6_point_escrow.sql'))
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -136,6 +139,13 @@ try {
       ) AS recommendation_capacity_migration_valid,
       (
         SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0010_sprint6_point_escrow'
+          AND checksum = $10
+          AND environment = $1
+      ) AS sprint6_point_escrow_migration_valid,
+      (
+        SELECT count(*) = 1
         FROM application_environment
         WHERE singleton = true
           AND environment = $1
@@ -196,6 +206,52 @@ try {
           AND tgname = 'point_ledger_prevent_mutation'
           AND NOT tgisinternal
       ) AS ledger_append_only,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'point_ledger'::regclass
+          AND tgname = 'point_ledger_apply_to_account'
+          AND NOT tgisinternal
+          AND (tgtype & 2) = 0
+      ) AS ledger_balance_trigger_is_after_insert,
+      to_regclass('public.point_grant_requests') IS NOT NULL
+        AS point_grant_requests_exists,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'point_ledger'::regclass
+          AND tgname = 'point_ledger_validate_sprint6'
+          AND NOT tgisinternal
+      ) AS point_ledger_sprint6_guard_exists,
+      EXISTS (
+        SELECT 1
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename = 'point_ledger'
+          AND indexname = 'point_ledger_one_deposit_per_participant_idx'
+      ) AS one_deposit_ledger_index_exists,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'trip_groups'::regclass
+          AND tgname = 'trip_groups_validate_escrow_confirmation'
+          AND NOT tgisinternal
+      ) AS trip_escrow_confirmation_guard_exists,
+      (
+        SELECT count(*) = 0
+        FROM point_grant_requests r
+        LEFT JOIN point_ledger l ON l.ledger_id = r.fulfilled_ledger_id
+        WHERE r.status = 'FULFILLED'
+          AND (
+            l.ledger_id IS NULL
+            OR l.entry_type <> 'ADMIN_GRANT'
+            OR l.point_request_id <> r.request_id
+            OR l.user_id <> r.requester_user_id
+            OR l.actor_user_id <> r.fulfilled_by
+            OR l.available_delta <> r.requested_amount
+            OR l.held_delta <> 0
+          )
+      ) AS point_request_fulfillments_valid,
       (
         SELECT count(*) = 0
         FROM trip_groups
@@ -347,6 +403,7 @@ try {
     participationGuardMigrationChecksum,
     recommendationEvidenceMigrationChecksum,
     recommendationCapacityMigrationChecksum,
+    sprint6PointEscrowMigrationChecksum,
   ])
 
   const verification = result.rows[0]

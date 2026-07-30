@@ -3,8 +3,15 @@ import 'server-only'
 import { Pool, type PoolClient } from '@neondatabase/serverless'
 import { ensureDatabaseIdentity, getDatabase, getDatabaseUrl } from '@/lib/db/client'
 import { resolveTripClosureStatus } from '@/lib/core/trip-validation'
+import {
+  isPointRequestUuid,
+  matchesGrantLedgerPayload,
+  MAX_POINT_AMOUNT,
+  normalizePointReason,
+  parsePointAmount,
+} from '@/lib/core/point-validation'
 
-const MAX_POINTS = 1_000_000
+const MAX_POINTS = MAX_POINT_AMOUNT
 
 export class CoreError extends Error {}
 
@@ -134,6 +141,166 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
       name: string
       studentId: string
     }>,
+  }
+}
+
+export async function getPointDashboard(userId: string) {
+  await ensureDatabaseIdentity()
+  const sql = getDatabase()
+  const [balances, ledger, requests] = await Promise.all([
+    sql`
+      SELECT
+        available_points AS "availablePoints",
+        held_points AS "heldPoints"
+      FROM point_accounts
+      WHERE user_id = ${userId}
+    `,
+    sql`
+      SELECT
+        ledger_id AS "ledgerId",
+        entry_type AS "entryType",
+        available_delta AS "availableDelta",
+        held_delta AS "heldDelta",
+        reason,
+        trip_id AS "tripId",
+        created_at AS "createdAt"
+      FROM point_ledger
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC, ledger_id DESC
+      LIMIT 100
+    `,
+    sql`
+      SELECT
+        request_id AS "requestId",
+        requested_amount AS "requestedAmount",
+        reason,
+        status,
+        requested_at AS "requestedAt",
+        fulfilled_at AS "fulfilledAt"
+      FROM point_grant_requests
+      WHERE requester_user_id = ${userId}
+      ORDER BY requested_at DESC, request_id DESC
+      LIMIT 20
+    `,
+  ])
+
+  const balance = balances[0] as
+    | { availablePoints: string; heldPoints: string }
+    | undefined
+  return {
+    balance: {
+      availablePoints: Number(balance?.availablePoints ?? 0),
+      heldPoints: Number(balance?.heldPoints ?? 0),
+    },
+    ledger: ledger as unknown as Array<{
+      ledgerId: string
+      entryType:
+        | 'ADMIN_GRANT'
+        | 'DEPOSIT'
+        | 'SETTLEMENT_CHARGE'
+        | 'REFUND'
+        | 'ADDITIONAL_DEBIT'
+      availableDelta: number
+      heldDelta: number
+      reason: string
+      tripId: string | null
+      createdAt: string
+    }>,
+    requests: requests as unknown as Array<{
+      requestId: string
+      requestedAmount: number
+      reason: string
+      status: 'PENDING' | 'FULFILLED'
+      requestedAt: string
+      fulfilledAt: string | null
+    }>,
+  }
+}
+
+export async function getAdminPointDashboard() {
+  await ensureDatabaseIdentity()
+  const sql = getDatabase()
+  const [users, grants, pendingRequests, totals] = await Promise.all([
+    sql`
+      SELECT
+        user_id AS "userId",
+        name,
+        student_id AS "studentId",
+        school_email AS "schoolEmail"
+      FROM users
+      WHERE account_status = 'ACTIVE'
+        AND role = 'USER'
+      ORDER BY name, student_id
+      LIMIT 200
+    `,
+    sql`
+      SELECT
+        l.ledger_id AS "ledgerId",
+        l.available_delta AS amount,
+        l.reason,
+        l.created_at AS "createdAt",
+        target.name AS "targetName",
+        target.student_id AS "targetStudentId",
+        actor.name AS "adminName"
+      FROM point_ledger l
+      JOIN users target ON target.user_id = l.user_id
+      JOIN users actor ON actor.user_id = l.actor_user_id
+      WHERE l.entry_type = 'ADMIN_GRANT'
+      ORDER BY l.created_at DESC, l.ledger_id DESC
+      LIMIT 100
+    `,
+    sql`
+      SELECT
+        r.request_id AS "requestId",
+        r.requested_amount AS "requestedAmount",
+        r.reason,
+        r.requested_at AS "requestedAt",
+        u.user_id AS "userId",
+        u.name,
+        u.student_id AS "studentId",
+        u.school_email AS "schoolEmail"
+      FROM point_grant_requests r
+      JOIN users u ON u.user_id = r.requester_user_id
+      WHERE r.status = 'PENDING'
+      ORDER BY r.requested_at, r.request_id
+      LIMIT 100
+    `,
+    sql`
+      SELECT COALESCE(sum(available_delta), 0) AS "totalGranted"
+      FROM point_ledger
+      WHERE entry_type = 'ADMIN_GRANT'
+    `,
+  ])
+
+  return {
+    users: users as unknown as Array<{
+      userId: string
+      name: string
+      studentId: string
+      schoolEmail: string
+    }>,
+    grants: grants as unknown as Array<{
+      ledgerId: string
+      amount: number
+      reason: string
+      createdAt: string
+      targetName: string
+      targetStudentId: string
+      adminName: string
+    }>,
+    pendingRequests: pendingRequests as unknown as Array<{
+      requestId: string
+      requestedAmount: number
+      reason: string
+      requestedAt: string
+      userId: string
+      name: string
+      studentId: string
+      schoolEmail: string
+    }>,
+    totalGranted: Number(
+      (totals[0] as { totalGranted?: string } | undefined)?.totalGranted ?? 0,
+    ),
   }
 }
 
@@ -601,14 +768,30 @@ export async function confirmTripAndDeposit(
       throw new CoreError('승인된 인원이 2~최대 인원일 때만 확정할 수 있습니다.')
     }
     const userIds = participants.rows.map((item) => item.user_id as string)
-    await client.query(
-      `SELECT user_id FROM users WHERE user_id = ANY($1::uuid[]) ORDER BY user_id FOR UPDATE`,
+    const eligibleUsers = await client.query(
+      `SELECT user_id
+       FROM users
+       WHERE user_id = ANY($1::uuid[])
+         AND account_status = 'ACTIVE'
+         AND nullif(btrim(student_id), '') IS NOT NULL
+         AND nullif(btrim(name), '') IS NOT NULL
+         AND nullif(btrim(school_email), '') IS NOT NULL
+       ORDER BY user_id
+       FOR UPDATE`,
       [userIds],
     )
+    if (eligibleUsers.rowCount !== userIds.length) {
+      throw new CoreError(
+        '모든 확정 참여자가 가입 정보가 완료된 활성 사용자여야 합니다.',
+      )
+    }
     const deposit = Math.ceil(row.estimated_fare / participantCount)
     const balances = await client.query(
-      `SELECT user_id, available_points FROM point_balances
-       WHERE user_id = ANY($1::uuid[])`,
+      `SELECT user_id, available_points
+       FROM point_accounts
+       WHERE user_id = ANY($1::uuid[])
+       ORDER BY user_id
+       FOR UPDATE`,
       [userIds],
     )
     if (
@@ -653,28 +836,256 @@ export async function grantPoints(input: {
   reason: string
   idempotencyKey: string
 }) {
-  positiveInteger(input.amount, '지급 포인트')
-  const reason = input.reason.trim()
-  if (!reason || reason.length > 200) throw new CoreError('지급 사유를 1~200자로 입력해주세요.')
-  await inTransaction(async (client) => {
-    const admin = await client.query(
-      `SELECT role FROM users WHERE user_id = $1 AND account_status = 'ACTIVE' FOR UPDATE`,
-      [input.adminId],
+  if (
+    !isPointRequestUuid(input.adminId) ||
+    !isPointRequestUuid(input.targetUserId) ||
+    !isPointRequestUuid(input.idempotencyKey)
+  ) {
+    throw new CoreError('포인트 지급 요청 식별자가 올바르지 않습니다.')
+  }
+  const amount = parsePointAmount(input.amount)
+  if (amount === null) {
+    throw new CoreError(
+      `지급 포인트는 1~${MAX_POINTS.toLocaleString()} 사이의 정수여야 합니다.`,
     )
-    if (admin.rows[0]?.role !== 'ADMIN') throw new CoreError('관리자만 포인트를 지급할 수 있습니다.')
+  }
+  const reason = normalizePointReason(input.reason)
+  if (!reason) throw new CoreError('지급 사유를 1~200자로 입력해주세요.')
+
+  return inTransaction(async (client) => {
+    const actors = await client.query(
+      `SELECT user_id, role, account_status
+       FROM users
+       WHERE user_id = ANY($1::uuid[])
+       ORDER BY user_id
+       FOR UPDATE`,
+      [[input.adminId, input.targetUserId]],
+    )
+    const admin = actors.rows.find((row) => row.user_id === input.adminId)
+    const target = actors.rows.find((row) => row.user_id === input.targetUserId)
+    if (admin?.role !== 'ADMIN' || admin.account_status !== 'ACTIVE') {
+      throw new CoreError('활성 관리자만 포인트를 지급할 수 있습니다.')
+    }
+    if (!target || target.account_status !== 'ACTIVE') {
+      throw new CoreError('활성 사용자에게만 포인트를 지급할 수 있습니다.')
+    }
+
     const ledgerKey = `grant:${input.adminId}:${input.idempotencyKey}`
-    const existing = await client.query(
-      `SELECT 1 FROM point_ledger WHERE idempotency_key = $1`,
-      [ledgerKey],
-    )
-    if (existing.rowCount) return
-    await client.query(
+    const inserted = await client.query(
       `INSERT INTO point_ledger (
          user_id, entry_type, available_delta, held_delta, actor_user_id,
          reason, idempotency_key
-       ) VALUES ($1, 'ADMIN_GRANT', $2, 0, $3, $4, $5)`,
-      [input.targetUserId, input.amount, input.adminId, reason, ledgerKey],
+       ) VALUES ($1, 'ADMIN_GRANT', $2, 0, $3, $4, $5)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING ledger_id`,
+      [input.targetUserId, amount, input.adminId, reason, ledgerKey],
     )
+    if (inserted.rowCount) return inserted.rows[0].ledger_id as string
+
+    const existing = await client.query(
+      `SELECT
+         ledger_id AS "ledgerId",
+         user_id AS "userId",
+         available_delta AS "availableDelta",
+         held_delta AS "heldDelta",
+         actor_user_id AS "actorUserId",
+         reason,
+         point_request_id AS "pointRequestId"
+       FROM point_ledger
+       WHERE idempotency_key = $1`,
+      [ledgerKey],
+    )
+    const row = existing.rows[0]
+    if (
+      !row ||
+      !matchesGrantLedgerPayload(row, {
+        userId: input.targetUserId,
+        availableDelta: amount,
+        heldDelta: 0,
+        actorUserId: input.adminId,
+        reason,
+        pointRequestId: null,
+      })
+    ) {
+      throw new CoreError(
+        '동일한 요청 식별자가 다른 지급 내용에 이미 사용되었습니다.',
+      )
+    }
+    return row.ledgerId as string
+  })
+}
+
+export async function requestPoints(input: {
+  requesterId: string
+  amount: number
+  reason: string
+  idempotencyKey: string
+}) {
+  if (
+    !isPointRequestUuid(input.requesterId) ||
+    !isPointRequestUuid(input.idempotencyKey)
+  ) {
+    throw new CoreError('포인트 요청 식별자가 올바르지 않습니다.')
+  }
+  const amount = parsePointAmount(input.amount)
+  if (amount === null) {
+    throw new CoreError(
+      `요청 포인트는 1~${MAX_POINTS.toLocaleString()} 사이의 정수여야 합니다.`,
+    )
+  }
+  const reason = normalizePointReason(input.reason)
+  if (!reason) throw new CoreError('요청 사유를 1~200자로 입력해주세요.')
+
+  return inTransaction(async (client) => {
+    const requester = await client.query(
+      `SELECT 1
+       FROM users
+       WHERE user_id = $1
+         AND account_status = 'ACTIVE'
+         AND nullif(btrim(student_id), '') IS NOT NULL
+         AND nullif(btrim(name), '') IS NOT NULL
+         AND nullif(btrim(school_email), '') IS NOT NULL
+       FOR UPDATE`,
+      [input.requesterId],
+    )
+    if (!requester.rowCount) {
+      throw new CoreError('가입 정보가 완료된 활성 사용자만 포인트를 요청할 수 있습니다.')
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO point_grant_requests (
+         requester_user_id, requested_amount, reason, idempotency_key
+       ) VALUES ($1, $2, $3, $4)
+       ON CONFLICT DO NOTHING
+       RETURNING request_id`,
+      [input.requesterId, amount, reason, input.idempotencyKey],
+    )
+    if (inserted.rowCount) return inserted.rows[0].request_id as string
+
+    const existing = await client.query(
+      `SELECT request_id, requested_amount, reason
+       FROM point_grant_requests
+       WHERE requester_user_id = $1 AND idempotency_key = $2`,
+      [input.requesterId, input.idempotencyKey],
+    )
+    const row = existing.rows[0]
+    if (!row) {
+      throw new CoreError(
+        '이미 처리 대기 중인 포인트 지급 요청이 있습니다.',
+      )
+    }
+    if (
+      Number(row.requested_amount) !== amount ||
+      row.reason !== reason
+    ) {
+      throw new CoreError(
+        '동일한 요청 식별자가 다른 포인트 요청에 이미 사용되었습니다.',
+      )
+    }
+    return row.request_id as string
+  })
+}
+
+export async function fulfillPointRequest(input: {
+  adminId: string
+  requestId: string
+}) {
+  if (
+    !isPointRequestUuid(input.adminId) ||
+    !isPointRequestUuid(input.requestId)
+  ) {
+    throw new CoreError('포인트 지급 요청 식별자가 올바르지 않습니다.')
+  }
+  return inTransaction(async (client) => {
+    const request = await client.query(
+      `SELECT
+         request_id,
+         requester_user_id,
+         requested_amount,
+         reason,
+         status,
+         fulfilled_ledger_id
+       FROM point_grant_requests
+       WHERE request_id = $1
+       FOR UPDATE`,
+      [input.requestId],
+    )
+    const row = request.rows[0]
+    if (!row) throw new CoreError('포인트 지급 요청을 찾을 수 없습니다.')
+    if (row.status === 'FULFILLED') return row.fulfilled_ledger_id as string
+
+    const users = await client.query(
+      `SELECT user_id, role, account_status
+       FROM users
+       WHERE user_id = ANY($1::uuid[])
+       ORDER BY user_id
+       FOR UPDATE`,
+      [[input.adminId, row.requester_user_id]],
+    )
+    const admin = users.rows.find((user) => user.user_id === input.adminId)
+    const target = users.rows.find(
+      (user) => user.user_id === row.requester_user_id,
+    )
+    if (admin?.role !== 'ADMIN' || admin.account_status !== 'ACTIVE') {
+      throw new CoreError('활성 관리자만 포인트 요청을 처리할 수 있습니다.')
+    }
+    if (!target || target.account_status !== 'ACTIVE') {
+      throw new CoreError('활성 사용자에게만 포인트를 지급할 수 있습니다.')
+    }
+
+    const ledger = await client.query(
+      `INSERT INTO point_ledger (
+         user_id, entry_type, available_delta, held_delta, actor_user_id,
+         reason, idempotency_key, point_request_id
+       ) VALUES ($1, 'ADMIN_GRANT', $2, 0, $3, $4, $5, $6)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING ledger_id`,
+      [
+        row.requester_user_id,
+        row.requested_amount,
+        input.adminId,
+        row.reason,
+        `point-request:${input.requestId}`,
+        input.requestId,
+      ],
+    )
+    let ledgerId = ledger.rows[0]?.ledger_id as string | undefined
+    if (!ledgerId) {
+      const existing = await client.query(
+        `SELECT ledger_id
+         FROM point_ledger
+         WHERE idempotency_key = $1
+           AND point_request_id = $2
+           AND user_id = $3
+           AND available_delta = $4
+           AND held_delta = 0
+           AND actor_user_id = $5
+           AND reason = $6`,
+        [
+          `point-request:${input.requestId}`,
+          input.requestId,
+          row.requester_user_id,
+          row.requested_amount,
+          input.adminId,
+          row.reason,
+        ],
+      )
+      ledgerId = existing.rows[0]?.ledger_id as string | undefined
+    }
+    if (!ledgerId) {
+      throw new CoreError('지급 요청의 멱등성 정보가 기존 원장과 일치하지 않습니다.')
+    }
+
+    await client.query(
+      `UPDATE point_grant_requests
+       SET status = 'FULFILLED',
+           fulfilled_by = $2,
+           fulfilled_ledger_id = $3,
+           fulfilled_at = now()
+       WHERE request_id = $1 AND status = 'PENDING'`,
+      [input.requestId, input.adminId, ledgerId],
+    )
+    return ledgerId
   })
 }
 

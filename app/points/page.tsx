@@ -1,15 +1,45 @@
-'use client'
-
-import { Coins, Info, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Coins, Info } from 'lucide-react'
+import { requestPointsAction } from '@/app/core/actions'
 import { MobileShell } from '@/components/mobile-shell'
 import { TabBar } from '@/components/tab-bar'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { useApp } from '@/components/app-provider'
-import { formatPoints } from '@/lib/mock-data'
+import { requireCompleteUser } from '@/lib/auth/session'
+import { getPointDashboard } from '@/lib/core/service'
 import { cn } from '@/lib/utils'
 
-export default function PointsPage() {
-  const { user, history } = useApp()
+function formatPoints(value: number) {
+  return `${Number(value).toLocaleString('ko-KR')}P`
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('ko-KR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Seoul',
+  }).format(new Date(value))
+}
+
+const ENTRY_LABELS = {
+  ADMIN_GRANT: '관리자 지급',
+  DEPOSIT: '예상 요금 예치',
+  SETTLEMENT_CHARGE: '최종 정산',
+  REFUND: '예치금 반환',
+  ADDITIONAL_DEBIT: '정산 추가 차감',
+} as const
+
+export default async function PointsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ message?: string; error?: string }>
+}) {
+  const user = await requireCompleteUser()
+  const [{ message, error }, data] = await Promise.all([
+    searchParams,
+    getPointDashboard(user.userId),
+  ])
+  const totalPoints =
+    data.balance.availablePoints + data.balance.heldPoints
 
   return (
     <MobileShell>
@@ -17,80 +47,211 @@ export default function PointsPage() {
         <h1 className="text-lg font-extrabold">포인트</h1>
       </header>
 
-      <div className="flex flex-1 flex-col gap-5 px-5 py-5">
+      <main className="flex flex-1 flex-col gap-5 px-5 py-5">
+        {message ? (
+          <p
+            role="status"
+            className="rounded-xl bg-mint-soft px-4 py-3 text-sm font-semibold"
+          >
+            {message}
+          </p>
+        ) : null}
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-xl bg-warn-soft px-4 py-3 text-sm font-semibold"
+          >
+            {error}
+          </p>
+        ) : null}
+
         <div className="rounded-2xl bg-foreground p-5 text-background">
           <div className="flex items-center gap-2">
             <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Coins className="size-5" />
+              <Coins className="size-5" aria-hidden />
             </span>
             <div>
-              <p className="text-xs text-background/70">보유 포인트</p>
-              <p className="text-2xl font-extrabold">{formatPoints(user.points)}</p>
+              <p className="text-xs text-background/70">총 포인트</p>
+              <p className="text-2xl font-extrabold">
+                {formatPoints(totalPoints)}
+              </p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-background/10 px-3 py-2.5">
-              <p className="text-xs text-background/70">예치 포인트</p>
-              <p className="text-base font-bold">{formatPoints(user.deposited)}</p>
+              <p className="text-xs text-background/70">예치 중</p>
+              <p className="text-base font-bold">
+                {formatPoints(data.balance.heldPoints)}
+              </p>
             </div>
             <div className="rounded-xl bg-background/10 px-3 py-2.5">
               <p className="text-xs text-background/70">사용 가능</p>
               <p className="text-base font-bold">
-                {formatPoints(user.points - user.deposited)}
+                {formatPoints(data.balance.availablePoints)}
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-start gap-2 rounded-2xl bg-secondary/50 px-4 py-3 text-xs leading-relaxed text-secondary-foreground">
-          <Info className="mt-0.5 size-4 shrink-0" />
-          포인트는 관리자가 지급하며, 서비스 안에서만 사용돼요. 별도의 충전은
-          필요하지 않아요.
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          포인트는 관리자가 지급하는 서비스 내 가상 단위이며 구매·환전할 수
+          없습니다.
         </div>
 
-        <div>
-          <h2 className="mb-3 text-sm font-bold">포인트 내역</h2>
-          <Card className="gap-0 p-0">
-            {history.map((tx, i) => (
-              <div
-                key={tx.id}
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3.5',
-                  i !== history.length - 1 && 'border-b border-border',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-9 items-center justify-center rounded-full',
-                    tx.amount >= 0
-                      ? 'bg-mint-soft text-mint'
-                      : 'bg-warn-soft text-warn',
-                  )}
-                >
-                  {tx.amount >= 0 ? (
-                    <ArrowDownLeft className="size-4" />
-                  ) : (
-                    <ArrowUpRight className="size-4" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold">{tx.label}</p>
-                  <p className="text-xs text-muted-foreground">{tx.date}</p>
-                </div>
-                <span
-                  className={cn(
-                    'text-sm font-extrabold',
-                    tx.amount >= 0 ? 'text-mint' : 'text-warn',
-                  )}
-                >
-                  {tx.amount >= 0 ? '+' : ''}
-                  {formatPoints(tx.amount)}
-                </span>
-              </div>
-            ))}
+        <form action={requestPointsAction}>
+          <Card className="flex flex-col gap-3 p-4">
+            <h2 className="text-sm font-bold">포인트 지급 요청</h2>
+            <p className="text-xs text-muted-foreground">
+              예치 또는 정산에 포인트가 부족하면 관리자에게 요청하세요.
+            </p>
+            <input
+              type="hidden"
+              name="idempotencyKey"
+              value={crypto.randomUUID()}
+            />
+            <div>
+              <label htmlFor="amount" className="mb-1.5 block text-sm font-medium">
+                요청 포인트
+              </label>
+              <input
+                id="amount"
+                name="amount"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={1_000_000}
+                step={1}
+                className="app-input"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="reason" className="mb-1.5 block text-sm font-medium">
+                요청 사유
+              </label>
+              <input
+                id="reason"
+                name="reason"
+                minLength={1}
+                maxLength={200}
+                className="app-input"
+                placeholder="예: 참여 확정 예치금 부족"
+                required
+              />
+            </div>
+            <Button type="submit" className="min-h-11 w-full">
+              관리자에게 요청
+            </Button>
           </Card>
-        </div>
-      </div>
+        </form>
+
+        {data.requests.length ? (
+          <section aria-labelledby="request-history-heading">
+            <h2 id="request-history-heading" className="mb-3 text-sm font-bold">
+              최근 지급 요청
+            </h2>
+            <Card className="gap-0 p-0">
+              {data.requests.map((request, index) => (
+                <div
+                  key={request.requestId}
+                  className={cn(
+                    'flex items-center justify-between gap-3 px-4 py-3.5',
+                    index !== data.requests.length - 1 &&
+                      'border-b border-border',
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">
+                      {request.reason}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(request.requestedAt)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold">
+                      {formatPoints(request.requestedAmount)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {request.status === 'PENDING' ? '처리 대기' : '지급 완료'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="ledger-heading">
+          <h2 id="ledger-heading" className="mb-3 text-sm font-bold">
+            포인트 원장
+          </h2>
+          {data.ledger.length ? (
+            <Card className="gap-0 p-0">
+              {data.ledger.map((entry, index) => {
+                const availableDelta = Number(entry.availableDelta)
+                const heldDelta = Number(entry.heldDelta)
+                return (
+                  <div
+                    key={entry.ledgerId}
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-3.5',
+                      index !== data.ledger.length - 1 &&
+                        'border-b border-border',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'flex size-9 items-center justify-center rounded-full',
+                        availableDelta >= 0
+                          ? 'bg-mint-soft text-mint'
+                          : 'bg-warn-soft text-warn',
+                      )}
+                    >
+                      {availableDelta >= 0 ? (
+                        <ArrowDownLeft className="size-4" aria-hidden />
+                      ) : (
+                        <ArrowUpRight className="size-4" aria-hidden />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">
+                        {ENTRY_LABELS[entry.entryType]}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {entry.reason} · {formatDate(entry.createdAt)}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right text-xs font-bold">
+                      {availableDelta ? (
+                        <p
+                          className={
+                            availableDelta > 0 ? 'text-mint' : 'text-warn'
+                          }
+                        >
+                          사용 가능 {availableDelta > 0 ? '+' : ''}
+                          {formatPoints(availableDelta)}
+                        </p>
+                      ) : null}
+                      {heldDelta ? (
+                        <p className="text-muted-foreground">
+                          예치 {heldDelta > 0 ? '+' : ''}
+                          {formatPoints(heldDelta)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </Card>
+          ) : (
+            <Card className="p-4 text-sm text-muted-foreground">
+              아직 포인트 거래 내역이 없습니다.
+            </Card>
+          )}
+        </section>
+      </main>
 
       <TabBar />
     </MobileShell>
