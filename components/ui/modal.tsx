@@ -30,7 +30,7 @@ export function Modal({
         onClick={onClose}
         className="absolute inset-0 bg-foreground/40 animate-in fade-in"
       />
-      <div className="relative m-4 w-full rounded-3xl bg-card p-5 shadow-xl animate-in slide-in-from-bottom-4">
+      <div className="relative m-4 w-full rounded-[18px] border border-border bg-card p-6 animate-in slide-in-from-bottom-4">
         {children}
       </div>
     </div>

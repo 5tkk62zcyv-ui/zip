@@ -11,7 +11,7 @@ export interface ToastItem {
 
 const toneStyles: Record<ToastItem['tone'], string> = {
   default: 'bg-foreground text-background',
-  success: 'bg-mint text-mint-foreground',
+  success: 'bg-foreground text-background',
   warn: 'bg-warn text-warn-foreground',
 }
 
@@ -31,7 +31,7 @@ export function Toaster({ toasts }: { toasts: ToastItem[] }) {
             key={t.id}
             role="status"
             className={cn(
-              'flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2',
+              'flex items-center gap-2 rounded-full border border-border px-4 py-2.5 text-sm font-normal animate-in fade-in slide-in-from-top-2',
               toneStyles[t.tone],
             )}
           >

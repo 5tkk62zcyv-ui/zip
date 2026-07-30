@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-pretendard), 'Pretendard', system-ui, sans-serif;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, var(--font-pretendard), 'Noto Sans KR', sans-serif;
   --font-mono: var(--font-jetbrains), monospace;
 
   --color-background: var(--background);
@@ -51,43 +51,40 @@
 
 :root {
   color-scheme: light;
-  --radius: 1rem;
+  --radius: 0.6875rem;
 
-  /* Warm ivory background, deep navy text */
-  --background: oklch(0.988 0.007 95);
-  --foreground: oklch(0.27 0.05 264);
+  /* Apple-inspired neutral canvas adapted for TaxiTaShare */
+  --background: #ffffff;
+  --foreground: #1d1d1f;
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.27 0.05 264);
+  --card-foreground: #1d1d1f;
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.27 0.05 264);
+  --popover-foreground: #1d1d1f;
 
-  /* Taxi yellow */
-  --primary: oklch(0.845 0.16 88);
-  --primary-foreground: oklch(0.27 0.05 264);
+  --primary: #0066cc;
+  --primary-foreground: #ffffff;
 
-  /* Mint secondary */
-  --secondary: oklch(0.95 0.04 185);
-  --secondary-foreground: oklch(0.3 0.06 220);
+  --secondary: #f5f5f7;
+  --secondary-foreground: #1d1d1f;
 
-  --muted: oklch(0.965 0.006 95);
-  --muted-foreground: oklch(0.53 0.03 262);
+  --muted: #f5f5f7;
+  --muted-foreground: #6e6e73;
 
-  /* Soft blue accent */
-  --accent: oklch(0.945 0.035 235);
-  --accent-foreground: oklch(0.3 0.07 250);
+  --accent: #f5f5f7;
+  --accent-foreground: #0066cc;
 
   /* Coral for warnings */
   --destructive: oklch(0.66 0.17 25);
   --destructive-foreground: oklch(0.99 0.01 90);
 
-  --border: oklch(0.905 0.01 95);
-  --input: oklch(0.905 0.01 95);
-  --ring: oklch(0.845 0.16 88);
+  --border: #e0e0e0;
+  --input: #e0e0e0;
+  --ring: #0071e3;
 
   /* Extended */
-  --brand: oklch(0.845 0.16 88);
-  --brand-foreground: oklch(0.27 0.05 264);
+  --brand: #0066cc;
+  --brand-foreground: #ffffff;
   --mint: oklch(0.62 0.1 175);
   --mint-foreground: oklch(0.99 0.01 90);
   --mint-soft: oklch(0.95 0.04 178);
@@ -105,11 +102,21 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 17px;
+    line-height: 1.44;
+    letter-spacing: -0.01em;
+  }
+  h1, h2, h3 {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  button, a, input, select, textarea {
+    @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring;
   }
 }
 
 @layer components {
   .app-input {
-    @apply w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30;
+    @apply min-h-11 w-full rounded-full border border-border bg-card px-5 py-3 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20;
   }
 }

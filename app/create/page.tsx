@@ -102,7 +102,7 @@ export default function CreateRoomPage() {
             <legend className="mb-2 text-sm font-bold"><Users className="mr-1.5 inline size-4" aria-hidden />최대 인원</legend>
             <div className="grid grid-cols-3 gap-2">
               {[2, 3, 4].map((count) => (
-                <label key={count} className="rounded-xl border bg-card py-3 text-center text-sm font-bold has-[:checked]:border-primary has-[:checked]:bg-primary/15">
+                <label key={count} className="rounded-full border bg-card py-3 text-center text-sm font-semibold has-[:checked]:border-primary has-[:checked]:bg-primary has-[:checked]:text-primary-foreground">
                   <input className="sr-only" type="radio" name="maxParticipants" value={count} checked={maxParticipants === count} onChange={() => setMaxParticipants(count)} />
                   {count}명
                 </label>
@@ -162,11 +162,11 @@ function PlaceSearch({ label, icon: Icon, selected, onSelect, error }: {
     <label htmlFor={inputId} className="mb-2 block text-sm font-bold"><Icon className="mr-1.5 inline size-4" aria-hidden />{label}</label>
     <div className="flex gap-2">
       <input id={inputId} value={query} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void search() } }} onChange={(event) => { setQuery(event.target.value); if (selected) onSelect(null) }} maxLength={100} className="app-input focus-visible:ring-2 focus-visible:ring-ring" placeholder={`${label} 검색`} />
-      <button aria-label={`${label} 검색`} type="button" onClick={() => void search()} disabled={searching || !query.trim()} className="min-h-11 shrink-0 rounded-xl bg-foreground px-4 text-sm font-bold text-background focus-visible:ring-2 focus-visible:ring-ring">
+      <button aria-label={`${label} 검색`} type="button" onClick={() => void search()} disabled={searching || !query.trim()} className="min-h-11 shrink-0 rounded-full bg-primary px-5 text-sm font-normal text-primary-foreground transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-ring">
         <Search className="size-4" aria-hidden />
       </button>
     </div>
-    {places.length ? <ul className="mt-2 rounded-xl border bg-card p-1">{places.map((place) => <li key={`${place.provider}:${place.providerPlaceId}`}><button type="button" onClick={() => { onSelect(place); setPlaces([]); setQuery(place.label) }} className="w-full rounded-lg px-3 py-3 text-left text-sm hover:bg-muted">{place.label}</button></li>)}</ul> : null}
+    {places.length ? <ul className="mt-2 rounded-[18px] border bg-card p-1">{places.map((place) => <li key={`${place.provider}:${place.providerPlaceId}`}><button type="button" onClick={() => { onSelect(place); setPlaces([]); setQuery(place.label) }} className="min-h-11 w-full rounded-xl px-4 py-3 text-left text-base hover:bg-muted">{place.label}</button></li>)}</ul> : null}
     <p className="mt-1 text-xs text-destructive" role="status">{error || message}</p>
   </div>
 }

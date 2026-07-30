@@ -93,7 +93,7 @@ export function RouteMap({
   return (
     <div
       className={cn(
-        'relative min-h-48 overflow-hidden rounded-2xl border border-border bg-muted',
+        'relative min-h-48 overflow-hidden rounded-[18px] border border-border bg-muted',
         className,
       )}
     >

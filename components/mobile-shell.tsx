@@ -15,7 +15,7 @@ export function MobileShell({
 }) {
   return (
     <div className="flex min-h-dvh justify-center bg-muted">
-      <div className="relative flex w-full max-w-[430px] flex-col bg-background shadow-xl">
+      <div className="relative flex w-full max-w-[680px] flex-col bg-background">
         <div
           className={cn(
             'flex min-h-dvh flex-col',

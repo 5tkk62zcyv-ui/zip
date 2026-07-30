@@ -87,7 +87,7 @@ export default function SignupPage() {
               ].map(([value, label]) => (
                 <label
                   key={value}
-                  className="cursor-pointer rounded-xl border border-border bg-card py-3 text-center text-sm font-semibold has-[:checked]:border-primary has-[:checked]:bg-primary/15 focus-within:ring-2 focus-within:ring-ring"
+                  className="cursor-pointer rounded-full border border-border bg-card py-3 text-center text-sm font-semibold has-[:checked]:border-primary has-[:checked]:bg-primary has-[:checked]:text-primary-foreground focus-within:ring-2 focus-within:ring-ring"
                 >
                   <input
                     type="radio"

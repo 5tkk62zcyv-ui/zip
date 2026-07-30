@@ -23,7 +23,7 @@ export function TopBar({
   return (
     <header
       className={cn(
-        'sticky top-0 z-30 flex items-center gap-2 border-b border-border bg-background/95 px-3 py-3 backdrop-blur',
+        'sticky top-0 z-30 flex min-h-[52px] items-center gap-2 border-b border-border/80 bg-background/80 px-4 py-2 backdrop-blur-xl backdrop-saturate-150',
         className,
       )}
     >
@@ -32,7 +32,7 @@ export function TopBar({
           type="button"
           onClick={() => (onBack ? onBack() : router.back())}
           aria-label="뒤로가기"
-          className="flex size-9 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
+          className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:scale-95"
         >
           <ChevronLeft className="size-5" />
         </button>
@@ -40,7 +40,7 @@ export function TopBar({
         <span className="w-1" />
       )}
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-base font-bold leading-tight">{title}</h1>
+        <h1 className="truncate text-[17px] font-semibold leading-tight tracking-tight">{title}</h1>
         {subtitle ? (
           <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         ) : null}

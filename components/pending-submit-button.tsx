@@ -23,7 +23,7 @@ export function PendingSubmitButton({
       disabled={disabled || pending}
       aria-disabled={disabled || pending}
       className={cn(
-        'inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground transition-transform active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100',
+        'inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-[17px] font-normal text-primary-foreground transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100',
         className,
       )}
     >

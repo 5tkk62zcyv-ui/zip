@@ -11,14 +11,14 @@ export default function OnboardingPage() {
 
         <div className="flex flex-1 flex-col items-center justify-center text-center">
           <div className="relative mb-8">
-            <TaxiMark className="size-28 rounded-[2rem] shadow-lg shadow-primary/30" />
-            <span className="absolute -right-3 -top-3 flex items-center gap-1 rounded-full bg-mint px-2.5 py-1 text-xs font-bold text-mint-foreground shadow">
+            <TaxiMark className="size-28 rounded-[18px]" />
+            <span className="absolute -right-3 -top-3 flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground">
               <Sparkles className="size-3.5" />
               AI 추천
             </span>
           </div>
 
-          <h1 className="text-pretty text-2xl font-extrabold leading-snug">
+          <h1 className="text-pretty text-[34px] font-semibold leading-tight tracking-[-0.02em]">
             같은 방향이라면,
             <br />
             택시비도 함께 나눠요
@@ -38,7 +38,7 @@ export default function OnboardingPage() {
 
         <Link
           href="/signup"
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-4 text-base font-bold text-primary-foreground transition-transform active:scale-[0.98]"
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-[17px] font-normal text-primary-foreground transition-transform active:scale-95"
         >
           시작하기
           <ArrowRight className="size-5" />

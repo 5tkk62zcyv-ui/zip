@@ -18,9 +18,9 @@ export function TabBar() {
   return (
     <nav
       aria-label="주요 메뉴"
-      className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[430px]"
+      className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[680px]"
     >
-      <div className="relative border-t border-border bg-card/95 backdrop-blur">
+      <div className="relative border-t border-border/80 bg-card/80 backdrop-blur-xl backdrop-saturate-150">
         <ul className="flex items-stretch justify-between px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
           {tabs.slice(0, 2).map((t) => (
             <TabItem key={t.href} {...t} active={pathname === t.href} />
@@ -31,10 +31,10 @@ export function TabBar() {
             <Link
               href="/create"
               aria-label="새 동승 방 만들기"
-              className="-mt-8 flex size-16 flex-col items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/40 ring-4 ring-background transition-transform active:scale-95"
+              className="-mt-6 flex size-14 flex-col items-center justify-center rounded-full bg-primary text-primary-foreground ring-4 ring-background transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <Plus className="size-6" aria-hidden />
-              <span className="text-[10px] font-bold">방 만들기</span>
+              <span className="text-[10px] font-semibold">방 만들기</span>
             </Link>
           </li>
 
@@ -63,7 +63,7 @@ function TabItem({
       <Link
         href={href}
         className={cn(
-          'flex w-full flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] font-medium transition-colors',
+          'flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-xl py-1.5 text-[11px] font-normal transition-colors',
           active ? 'text-foreground' : 'text-muted-foreground',
         )}
         aria-current={active ? 'page' : undefined}

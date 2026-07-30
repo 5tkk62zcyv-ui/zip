@@ -9,10 +9,10 @@ export function BottomBar({
   className?: string
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[430px]">
+    <div className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[680px]">
       <div
         className={cn(
-          'border-t border-border bg-background/95 px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-3 backdrop-blur',
+          'border-t border-border/80 bg-background/80 px-5 pb-[max(env(safe-area-inset-bottom),1rem)] pt-3 backdrop-blur-xl backdrop-saturate-150',
           className,
         )}
       >
@@ -33,13 +33,13 @@ export function BigButton({
     primary: 'bg-primary text-primary-foreground',
     foreground: 'bg-foreground text-background',
     warn: 'bg-warn text-warn-foreground',
-    mint: 'bg-mint text-mint-foreground',
+    mint: 'bg-primary text-primary-foreground',
     outline: 'border border-border bg-background text-foreground',
   }
   return (
     <button
       className={cn(
-        'flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-base font-bold transition-transform active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100',
+        'flex min-h-12 w-full items-center justify-center gap-2 rounded-full px-6 py-3 text-[17px] font-normal transition-transform active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50 disabled:active:scale-100',
         tones[tone],
         className,
       )}

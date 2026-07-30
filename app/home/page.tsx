@@ -30,18 +30,18 @@ export default async function HomePage({
         <BrandLogo size="sm" />
         <Link
           href="/my-rooms"
-          className="inline-flex min-h-11 items-center rounded-full bg-card px-4 text-sm font-bold shadow-sm"
+          className="inline-flex min-h-11 items-center rounded-full border border-border bg-card px-4 text-sm font-normal text-primary transition-transform active:scale-95"
         >
           내 방
         </Link>
       </header>
 
       <main className="flex-1 px-5">
-        <h1 className="text-xl font-extrabold">안녕하세요, {user.name}님</h1>
+        <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.02em]">안녕하세요, {user.name}님</h1>
 
         <Link
           href="/points"
-          className="mt-4 block rounded-2xl bg-foreground p-4 text-background shadow-sm"
+          className="mt-6 block rounded-[18px] bg-foreground p-6 text-background"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -124,7 +124,7 @@ export default async function HomePage({
         </section>
 
         <section className="mt-7 pb-4" aria-labelledby="room-list-heading">
-          <h2 id="room-list-heading" className="text-lg font-extrabold">
+          <h2 id="room-list-heading" className="text-[21px] font-semibold tracking-tight">
             모집 방
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -149,7 +149,7 @@ export default async function HomePage({
 
           <Link
             href="/create"
-            className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-primary bg-primary/10 px-4 py-4 text-base font-bold transition-transform active:scale-[0.98]"
+            className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-primary bg-background px-6 py-3 text-[17px] font-normal text-primary transition-transform active:scale-95"
           >
             <Plus className="size-5" aria-hidden />
             새 동승 방 만들기
