@@ -44,6 +44,9 @@ const recommendationCapacityMigrationChecksum = createHash('sha256')
 const sprint6PointEscrowMigrationChecksum = createHash('sha256')
   .update(await readFile('db/migrations/0010_sprint6_point_escrow.sql'))
   .digest('hex')
+const demoTripJourneyMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0012_demo_trip_journey.sql'))
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -144,6 +147,13 @@ try {
           AND checksum = $10
           AND environment = $1
       ) AS sprint6_point_escrow_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0012_demo_trip_journey'
+          AND checksum = $11
+          AND environment = $1
+      ) AS demo_trip_journey_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -390,9 +400,36 @@ try {
         SELECT 1
         FROM pg_trigger
         WHERE tgrelid = 'trip_recommendation_evidence'::regclass
-          AND tgname = 'trip_recommendation_evidence_validate_v2'
+        AND tgname = 'trip_recommendation_evidence_validate_v2'
+        AND NOT tgisinternal
+      ) AS recommendation_evidence_v2_trigger_exists,
+      (
+        SELECT count(*) = 0
+        FROM trip_participants p
+        WHERE
+          (p.status = 'CHECKED_IN' AND p.checked_in_at IS NULL)
+          OR (
+            p.status = 'NO_SHOW'
+            AND (p.no_show_at IS NULL OR p.no_show_marked_by IS NULL)
+          )
+          OR (p.no_show_at IS NULL) <> (p.no_show_marked_by IS NULL)
+      ) AS demo_journey_participants_valid,
+      (
+        SELECT count(*) = 0
+        FROM trip_settlements s
+        WHERE s.participant_count <> (
+          SELECT count(*)
+          FROM trip_deposits d
+          WHERE d.trip_id = s.trip_id
+        )
+      ) AS settlement_escrow_cohort_valid,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'trip_settlements'::regclass
+          AND tgname = 'trip_settlements_validate_demo_cohort'
           AND NOT tgisinternal
-      ) AS recommendation_evidence_v2_trigger_exists
+      ) AS demo_settlement_cohort_trigger_exists
   `, [
     expectedEnvironment,
     expectedFingerprint,
@@ -404,6 +441,7 @@ try {
     recommendationEvidenceMigrationChecksum,
     recommendationCapacityMigrationChecksum,
     sprint6PointEscrowMigrationChecksum,
+    demoTripJourneyMigrationChecksum,
   ])
 
   const verification = result.rows[0]

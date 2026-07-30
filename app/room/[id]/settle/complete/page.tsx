@@ -1,117 +1,129 @@
-'use client'
-
 import Link from 'next/link'
-import { useParams, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
-import { CheckCircle2, ArrowRight } from 'lucide-react'
+import { notFound } from 'next/navigation'
+import { ArrowRight, CheckCircle2 } from 'lucide-react'
 import { MobileShell } from '@/components/mobile-shell'
+import { TopBar } from '@/components/top-bar'
 import { Card, CardTitle } from '@/components/ui/card'
-import { BottomBar, BigButton } from '@/components/bottom-bar'
-import { formatPoints, formatWon, getRoomById } from '@/lib/mock-data'
-import { cn } from '@/lib/utils'
+import { requireCompleteUser } from '@/lib/auth/session'
+import { CoreError, getTripJourney } from '@/lib/core/service'
 
-export default function SettleCompletePage() {
-  return (
-    <Suspense fallback={null}>
-      <Content />
-    </Suspense>
-  )
+export const dynamic = 'force-dynamic'
+
+const ledgerLabels: Record<string, string> = {
+  DEPOSIT: '예상 요금 예치',
+  SETTLEMENT_CHARGE: '예치금 최종 정산',
+  REFUND: '정산 차액 반환',
+  ADDITIONAL_DEBIT: '정산 부족분 추가 차감',
 }
 
-function Content() {
-  const params = useParams<{ id: string }>()
-  const search = useSearchParams()
-  const room = getRoomById(params.id)
-  const fare = Number(search.get('fare')) || 13500
-
-  const confirmed = 3
-  const finalShare = Math.round(fare / confirmed / 100) * 100
-
-  const timeline = [
-    { label: '관리자 지급', amount: 30000 },
-    { label: '예상 요금 예치', amount: -4000 },
-    { label: '최종 정산 추가 차감', amount: -(finalShare - 4000) },
-  ]
+export default async function SettleCompletePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ message?: string }>
+}) {
+  const user = await requireCompleteUser()
+  const [{ id }, query] = await Promise.all([params, searchParams])
+  const journey = await getJourney(user.userId, id)
+  const { trip, settlement, ledger, participants } = journey
+  if (trip.status !== 'COMPLETED' || settlement?.status !== 'COMPLETED') {
+    notFound()
+  }
+  const noShowCount = participants.filter(
+    (participant) => participant.noShowAt !== null,
+  ).length
 
   return (
     <MobileShell withTabBar={false}>
-      <div className="flex flex-1 flex-col px-6 pb-32 pt-14">
+      <TopBar title="정산 결과" backHref="/my-rooms" />
+      <main className="flex flex-1 flex-col gap-4 px-5 py-6 pb-28">
         <div className="flex flex-col items-center text-center">
-          <span className="flex size-20 items-center justify-center rounded-full bg-mint text-mint-foreground shadow-lg shadow-mint/30 animate-in zoom-in">
-            <CheckCircle2 className="size-11" strokeWidth={2.4} />
+          <span className="flex size-20 items-center justify-center rounded-full bg-mint text-mint-foreground">
+            <CheckCircle2 className="size-11" aria-hidden />
           </span>
-          <h1 className="mt-6 text-2xl font-extrabold">정산이 완료되었어요</h1>
+          <h1 className="mt-5 text-2xl font-extrabold">정산을 완료했습니다</h1>
+          {query.message ? (
+            <p className="mt-2 text-sm text-muted-foreground" role="status">
+              {query.message}
+            </p>
+          ) : null}
         </div>
 
-        <Card className="mt-8 gap-2">
-          <div className="flex items-center justify-center gap-2 pb-2 text-sm font-bold">
-            <span>{room?.origin ?? '전북대학교'}</span>
-            <ArrowRight className="size-4 text-muted-foreground" />
-            <span>{room?.destination ?? '전주역'}</span>
+        <Card className="gap-3">
+          <div className="flex items-center justify-center gap-2 text-sm font-bold">
+            <span>{trip.origin}</span>
+            <ArrowRight className="size-4 text-muted-foreground" aria-hidden />
+            <span>{trip.destination}</span>
           </div>
-          <Row label="실제 택시비" value={formatWon(fare)} />
-          <Row label="확정 인원" value={`${confirmed}명`} />
-          <div className="border-t border-border pt-2">
-            <Row label="내 최종 부담" value={formatPoints(finalShare)} emphasize />
-          </div>
+          <Row
+            label="실제 총요금"
+            value={`${Number(settlement.actualFare).toLocaleString('ko-KR')}P`}
+          />
+          <Row label="정산 인원" value={`${settlement.participantCount}명`} />
+          <Row
+            label="노쇼 포함"
+            value={`${noShowCount}명`}
+          />
+          <Row
+            label="1인 최종 부담"
+            value={`${Number(settlement.finalShare).toLocaleString('ko-KR')}P`}
+            strong
+          />
         </Card>
 
-        <div className="mt-4">
-          <CardTitle className="mb-3">포인트 거래 내역</CardTitle>
-          <ol className="relative flex flex-col gap-4 border-l-2 border-border pl-5">
-            {timeline.map((t, i) => (
-              <li key={i} className="relative">
-                <span
-                  className={cn(
-                    'absolute -left-[27px] top-0.5 size-3 rounded-full ring-4 ring-background',
-                    t.amount >= 0 ? 'bg-mint' : 'bg-warn',
-                  )}
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{t.label}</span>
-                  <span
-                    className={cn(
-                      'text-sm font-bold',
-                      t.amount >= 0 ? 'text-mint' : 'text-warn',
-                    )}
-                  >
-                    {t.amount >= 0 ? '+' : ''}
-                    {formatPoints(t.amount)}
-                  </span>
-                </div>
-              </li>
+        <section>
+          <CardTitle className="mb-3">내 포인트 거래 내역</CardTitle>
+          <Card className="gap-3">
+            {ledger.map((entry, index) => (
+              <div
+                key={`${entry.entryType}-${index}`}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span>{ledgerLabels[entry.entryType] ?? entry.reason}</span>
+                <span className="text-right font-semibold">
+                  {Number(entry.availableDelta) !== 0
+                    ? `${Number(entry.availableDelta) > 0 ? '+' : ''}${Number(entry.availableDelta).toLocaleString('ko-KR')}P`
+                    : `${Number(entry.heldDelta).toLocaleString('ko-KR')}P 예치`}
+                </span>
+              </div>
             ))}
-          </ol>
-        </div>
-      </div>
+          </Card>
+        </section>
 
-      <BottomBar>
-        <Link href="/home" className="block">
-          <BigButton>홈으로 돌아가기</BigButton>
+        <Link
+          href="/home"
+          className="flex min-h-12 items-center justify-center rounded-full bg-primary px-6 py-3 text-[17px] text-primary-foreground"
+        >
+          홈으로 돌아가기
         </Link>
-      </BottomBar>
+      </main>
     </MobileShell>
   )
+}
+
+async function getJourney(userId: string, tripId: string) {
+  try {
+    return await getTripJourney(userId, tripId)
+  } catch (error) {
+    if (error instanceof CoreError) notFound()
+    throw error
+  }
 }
 
 function Row({
   label,
   value,
-  emphasize,
+  strong,
 }: {
   label: string
   value: string
-  emphasize?: boolean
+  strong?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between text-sm">
+    <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span
-        className={cn(
-          'font-semibold',
-          emphasize && 'text-base font-extrabold text-foreground',
-        )}
-      >
+      <span className={strong ? 'text-base font-extrabold' : 'font-semibold'}>
         {value}
       </span>
     </div>

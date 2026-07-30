@@ -3,6 +3,7 @@ import 'server-only'
 import { Pool, type PoolClient } from '@neondatabase/serverless'
 import { ensureDatabaseIdentity, getDatabase, getDatabaseUrl } from '@/lib/db/client'
 import { resolveTripClosureStatus } from '@/lib/core/trip-validation'
+import { calculateDemoFinalShare } from '@/lib/core/journey'
 import {
   isPointRequestUuid,
   matchesGrantLedgerPayload,
@@ -154,6 +155,141 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
       userId: string
       name: string
       studentId: string
+    }>,
+  }
+}
+
+export async function getTripJourney(userId: string, tripId: string) {
+  await ensureDatabaseIdentity()
+  const sql = getDatabase()
+  const [tripRows, participantRows, settlementRows, ledgerRows] =
+    await Promise.all([
+      sql`
+        SELECT
+          g.trip_id AS "tripId",
+          g.host_user_id AS "hostUserId",
+          g.origin,
+          g.destination,
+          g.departure_at AS "departureAt",
+          g.status,
+          g.in_progress_at AS "inProgressAt",
+          p.status AS "currentUserStatus",
+          p.role AS "currentUserRole",
+          (
+            SELECT count(*)::int
+            FROM trip_deposits d
+            WHERE d.trip_id = g.trip_id
+          ) AS "escrowParticipantCount"
+        FROM trip_groups g
+        JOIN trip_participants p
+          ON p.trip_id = g.trip_id
+         AND p.user_id = ${userId}
+        JOIN trip_deposits mine
+          ON mine.trip_id = p.trip_id
+         AND mine.user_id = p.user_id
+        WHERE g.trip_id = ${tripId}
+      `,
+      sql`
+        SELECT
+          p.user_id AS "userId",
+          u.name,
+          p.role,
+          p.status,
+          p.checked_in_at AS "checkedInAt",
+          p.no_show_at AS "noShowAt",
+          d.amount AS "depositAmount"
+        FROM trip_participants p
+        JOIN users u ON u.user_id = p.user_id
+        JOIN trip_deposits d
+          ON d.trip_id = p.trip_id
+         AND d.user_id = p.user_id
+        WHERE p.trip_id = ${tripId}
+          AND EXISTS (
+            SELECT 1
+            FROM trip_participants viewer
+            JOIN trip_deposits viewer_deposit
+              ON viewer_deposit.trip_id = viewer.trip_id
+             AND viewer_deposit.user_id = viewer.user_id
+            WHERE viewer.trip_id = p.trip_id
+              AND viewer.user_id = ${userId}
+          )
+        ORDER BY p.role DESC, p.applied_at
+      `,
+      sql`
+        SELECT
+          s.actual_fare AS "actualFare",
+          s.final_share AS "finalShare",
+          s.participant_count AS "participantCount",
+          s.status,
+          count(c.user_id)::int AS "confirmationCount",
+          bool_or(c.user_id = ${userId}) AS "currentUserConfirmed",
+          s.settled_at AS "settledAt"
+        FROM trip_settlements s
+        LEFT JOIN fare_confirmations c ON c.trip_id = s.trip_id
+        WHERE s.trip_id = ${tripId}
+        GROUP BY s.trip_id
+      `,
+      sql`
+        SELECT
+          entry_type AS "entryType",
+          available_delta AS "availableDelta",
+          held_delta AS "heldDelta",
+          reason,
+          created_at AS "createdAt"
+        FROM point_ledger
+        WHERE trip_id = ${tripId}
+          AND user_id = ${userId}
+          AND entry_type IN (
+            'DEPOSIT', 'SETTLEMENT_CHARGE', 'REFUND', 'ADDITIONAL_DEBIT'
+          )
+        ORDER BY created_at
+      `,
+    ])
+
+  const trip = tripRows[0] as
+    | {
+        tripId: string
+        hostUserId: string
+        origin: string
+        destination: string
+        departureAt: string
+        status: string
+        inProgressAt: string | null
+        currentUserStatus: string
+        currentUserRole: string
+        escrowParticipantCount: number
+      }
+    | undefined
+  if (!trip) throw new CoreError('확정 참여자만 집결 정보를 볼 수 있습니다.')
+
+  return {
+    trip,
+    participants: participantRows as unknown as Array<{
+      userId: string
+      name: string
+      role: string
+      status: string
+      checkedInAt: string | null
+      noShowAt: string | null
+      depositAmount: number
+    }>,
+    settlement: settlementRows[0] as
+      | {
+          actualFare: number
+          finalShare: number
+          participantCount: number
+          status: string
+          confirmationCount: number
+          currentUserConfirmed: boolean
+          settledAt: string | null
+        }
+      | undefined,
+    ledger: ledgerRows as unknown as Array<{
+      entryType: string
+      availableDelta: number
+      heldDelta: number
+      reason: string
+      createdAt: string
     }>,
   }
 }
@@ -1282,6 +1418,151 @@ export async function fulfillPointRequest(input: {
   })
 }
 
+export async function startTrip(
+  actorId: string,
+  tripId: string,
+  idempotencyKey: string,
+) {
+  await inTransaction(async (client) => {
+    const trip = await client.query(
+      `SELECT host_user_id, status, start_idempotency_key
+       FROM trip_groups
+       WHERE trip_id = $1
+       FOR UPDATE`,
+      [tripId],
+    )
+    const row = trip.rows[0]
+    if (!row || row.host_user_id !== actorId) {
+      throw new CoreError('방장만 이동을 시작할 수 있습니다.')
+    }
+    if (
+      row.status === 'IN_PROGRESS' &&
+      row.start_idempotency_key === idempotencyKey
+    ) {
+      return
+    }
+    if (row.status !== 'CONFIRMED') {
+      throw new CoreError('예치가 완료된 확정 방만 이동을 시작할 수 있습니다.')
+    }
+    const deposits = await client.query(
+      `SELECT count(*)::int AS count
+       FROM trip_deposits
+       WHERE trip_id = $1`,
+      [tripId],
+    )
+    if (Number(deposits.rows[0].count) < 2) {
+      throw new CoreError('예치가 완료된 참여자가 2명 이상이어야 합니다.')
+    }
+    await client.query(
+      `UPDATE trip_groups
+       SET status = 'IN_PROGRESS',
+           in_progress_at = now(),
+           start_idempotency_key = $2
+       WHERE trip_id = $1`,
+      [tripId, idempotencyKey],
+    )
+  })
+}
+
+export async function checkInParticipant(
+  actorId: string,
+  tripId: string,
+  idempotencyKey: string,
+) {
+  await inTransaction(async (client) => {
+    const participant = await client.query(
+      `SELECT g.status AS trip_status, p.status, p.check_in_idempotency_key
+       FROM trip_groups g
+       JOIN trip_participants p
+         ON p.trip_id = g.trip_id
+        AND p.user_id = $2
+       JOIN trip_deposits d
+         ON d.trip_id = p.trip_id
+        AND d.user_id = p.user_id
+       WHERE g.trip_id = $1
+       FOR UPDATE OF g, p`,
+      [tripId, actorId],
+    )
+    const row = participant.rows[0]
+    if (!row) throw new CoreError('확정 참여자만 체크인할 수 있습니다.')
+    if (
+      row.status === 'CHECKED_IN' &&
+      row.check_in_idempotency_key === idempotencyKey
+    ) {
+      return
+    }
+    if (row.trip_status !== 'IN_PROGRESS' || row.status !== 'DEPOSITED') {
+      throw new CoreError('이동이 시작된 후 한 번만 체크인할 수 있습니다.')
+    }
+    await client.query(
+      `UPDATE trip_participants
+       SET status = 'CHECKED_IN',
+           checked_in_at = now(),
+           check_in_idempotency_key = $3
+       WHERE trip_id = $1 AND user_id = $2`,
+      [tripId, actorId, idempotencyKey],
+    )
+  })
+}
+
+export async function markParticipantNoShow(input: {
+  actorId: string
+  tripId: string
+  participantId: string
+  idempotencyKey: string
+}) {
+  await inTransaction(async (client) => {
+    const trip = await client.query(
+      `SELECT host_user_id, status
+       FROM trip_groups
+       WHERE trip_id = $1
+       FOR UPDATE`,
+      [input.tripId],
+    )
+    const tripRow = trip.rows[0]
+    if (!tripRow || tripRow.host_user_id !== input.actorId) {
+      throw new CoreError('방장만 노쇼를 처리할 수 있습니다.')
+    }
+    if (tripRow.status !== 'IN_PROGRESS') {
+      throw new CoreError('이동 시작 후에만 노쇼를 처리할 수 있습니다.')
+    }
+    const participant = await client.query(
+      `SELECT p.role, p.status, p.no_show_idempotency_key
+       FROM trip_participants p
+       JOIN trip_deposits d
+         ON d.trip_id = p.trip_id
+        AND d.user_id = p.user_id
+       WHERE p.trip_id = $1 AND p.user_id = $2
+       FOR UPDATE OF p`,
+      [input.tripId, input.participantId],
+    )
+    const row = participant.rows[0]
+    if (
+      row?.status === 'NO_SHOW' &&
+      row.no_show_idempotency_key === input.idempotencyKey
+    ) {
+      return
+    }
+    if (!row || row.role === 'HOST' || row.status !== 'DEPOSITED') {
+      throw new CoreError('미체크인 확정 참여자만 노쇼 처리할 수 있습니다.')
+    }
+    await client.query(
+      `UPDATE trip_participants
+       SET status = 'NO_SHOW',
+           no_show_at = now(),
+           no_show_idempotency_key = $3,
+           no_show_marked_by = $4
+       WHERE trip_id = $1 AND user_id = $2`,
+      [
+        input.tripId,
+        input.participantId,
+        input.idempotencyKey,
+        input.actorId,
+      ],
+    )
+  })
+}
+
 export async function submitActualFare(input: {
   actorId: string
   tripId: string
@@ -1296,13 +1577,41 @@ export async function submitActualFare(input: {
     )
     const row = trip.rows[0]
     if (!row || row.host_user_id !== input.actorId) throw new CoreError('방장만 실제 요금을 입력할 수 있습니다.')
-    if (row.status !== 'CONFIRMED') throw new CoreError('예치가 완료된 방에서만 실제 요금을 입력할 수 있습니다.')
+    const replay = await client.query(
+      `SELECT actual_fare, submitted_by, fare_submission_idempotency_key
+       FROM trip_settlements
+       WHERE trip_id = $1`,
+      [input.tripId],
+    )
+    if (replay.rowCount) {
+      const existing = replay.rows[0]
+      if (
+        existing.submitted_by === input.actorId &&
+        existing.fare_submission_idempotency_key === input.idempotencyKey &&
+        Number(existing.actual_fare) === input.actualFare
+      ) {
+        return
+      }
+      throw new CoreError('이미 실제 요금이 등록되었습니다.')
+    }
+    if (row.status !== 'IN_PROGRESS') throw new CoreError('이동 시작 후 실제 요금을 입력할 수 있습니다.')
     const count = await client.query(
-      `SELECT count(*)::int AS count FROM trip_participants
-       WHERE trip_id = $1 AND status = 'DEPOSITED'`,
+      `SELECT count(*)::int AS count
+       FROM trip_deposits
+       WHERE trip_id = $1`,
       [input.tripId],
     )
     const participantCount = count.rows[0].count as number
+    if (participantCount < 2) {
+      throw new CoreError('정산 대상 예치 참여자가 2명 이상이어야 합니다.')
+    }
+    try {
+      calculateDemoFinalShare(input.actualFare, participantCount)
+    } catch {
+      throw new CoreError(
+        `시연용 정산은 ${participantCount}명으로 나누어떨어지는 실제 요금만 입력할 수 있습니다.`,
+      )
+    }
     await client.query(
       `INSERT INTO trip_settlements (
          trip_id, actual_fare, participant_count, final_share, submitted_by,
@@ -1334,8 +1643,12 @@ export async function confirmFare(
     const participant = await client.query(
       `SELECT 1 FROM trip_groups g
        JOIN trip_participants p ON p.trip_id = g.trip_id
+       JOIN trip_deposits d
+         ON d.trip_id = p.trip_id
+        AND d.user_id = p.user_id
        WHERE g.trip_id = $1 AND g.status = 'SETTLEMENT_PENDING'
-         AND p.user_id = $2 AND p.status = 'DEPOSITED'
+         AND p.user_id = $2
+         AND p.status IN ('DEPOSITED', 'CHECKED_IN', 'NO_SHOW')
        FOR UPDATE OF g`,
       [tripId, actorId],
     )
@@ -1380,6 +1693,9 @@ export async function settleTrip(
       `SELECT user_id, amount FROM trip_deposits WHERE trip_id = $1 ORDER BY user_id FOR UPDATE`,
       [tripId],
     )
+    if (deposits.rowCount !== row.participant_count) {
+      throw new CoreError('확정 당시 예치 참여자 정보가 정산 정보와 일치하지 않습니다.')
+    }
     const userIds = deposits.rows.map((item) => item.user_id as string)
     await client.query(
       `SELECT user_id FROM users WHERE user_id = ANY($1::uuid[]) ORDER BY user_id FOR UPDATE`,
@@ -1434,8 +1750,10 @@ export async function settleTrip(
     }
     await client.query(
       `UPDATE trip_participants SET status = 'COMPLETED', completed_at = now()
-       WHERE trip_id = $1 AND status = 'DEPOSITED'`,
-      [tripId],
+       WHERE trip_id = $1
+         AND user_id = ANY($2::uuid[])
+         AND status IN ('DEPOSITED', 'CHECKED_IN', 'NO_SHOW')`,
+      [tripId, userIds],
     )
     await client.query(
       `UPDATE trip_settlements

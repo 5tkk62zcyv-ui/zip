@@ -1,139 +1,214 @@
-'use client'
-
-import { useParams, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { MessageCircle, MapPin, ShieldCheck, Check, Clock } from 'lucide-react'
+import { randomUUID } from 'node:crypto'
+import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { Check, Clock, MapPin, UserX } from 'lucide-react'
+import {
+  checkInAction,
+  markNoShowAction,
+  startTripAction,
+} from '@/app/core/actions'
+import { Avatar } from '@/components/avatar'
+import { BottomBar } from '@/components/bottom-bar'
 import { MobileShell } from '@/components/mobile-shell'
+import { PendingSubmitButton } from '@/components/pending-submit-button'
+import { StatusBadge } from '@/components/status-badge'
 import { TopBar } from '@/components/top-bar'
 import { Card, CardTitle } from '@/components/ui/card'
-import { BottomBar, BigButton } from '@/components/bottom-bar'
-import { StatusBadge } from '@/components/status-badge'
-import { Avatar } from '@/components/avatar'
-import { useApp } from '@/components/app-provider'
-import { getRoomById } from '@/lib/mock-data'
+import { requireCompleteUser } from '@/lib/auth/session'
+import { CoreError, getTripJourney } from '@/lib/core/service'
 
-export default function GatheringPage() {
-  const params = useParams<{ id: string }>()
-  const router = useRouter()
-  const { rooms, toast } = useApp()
-  const room = rooms.find((r) => r.id === params.id) ?? getRoomById(params.id)
+export const dynamic = 'force-dynamic'
 
-  const [seconds, setSeconds] = useState(8 * 60 + 24)
-  const [arrived, setArrived] = useState(false)
-
-  useEffect(() => {
-    const t = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 0)), 1000)
-    return () => clearInterval(t)
-  }, [])
-
-  if (!room) return null
-
-  const mm = String(Math.floor(seconds / 60)).padStart(2, '0')
-  const ss = String(seconds % 60).padStart(2, '0')
-
-  const participants = [
-    ...room.members.map((m) => ({ name: m.displayName, role: m.role, checkedIn: m.role === 'host' })),
-  ]
+export default async function GatheringPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ message?: string; error?: string }>
+}) {
+  const user = await requireCompleteUser()
+  const [{ id }, query] = await Promise.all([params, searchParams])
+  const journey = await getJourney(user.userId, id)
+  const { trip, participants } = journey
+  const isHost = trip.hostUserId === user.userId
+  const current = participants.find((item) => item.userId === user.userId)
+  const canCheckIn =
+    trip.status === 'IN_PROGRESS' && current?.status === 'DEPOSITED'
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar title="출발 준비" subtitle={`${room.origin} → ${room.destination}`} backHref={`/room/${room.id}`} />
+      <TopBar
+        title="집결 및 이동"
+        subtitle={`${trip.origin} → ${trip.destination}`}
+        backHref={`/room/${trip.tripId}`}
+      />
 
-      <div className="flex flex-1 flex-col gap-4 px-5 py-4">
-        <div className="flex flex-col items-center rounded-3xl bg-foreground px-6 py-8 text-background">
-          <StatusBadge tone="brand" className="mb-4">
-            출발 준비 중
-          </StatusBadge>
-          <p className="text-sm text-background/70">출발까지</p>
-          <p className="mt-1 font-mono text-5xl font-extrabold tabular-nums">
-            {mm}:{ss}
+      <main className="flex flex-1 flex-col gap-4 px-5 py-4 pb-32">
+        {query.message ? (
+          <p className="rounded-xl bg-mint-soft px-4 py-3 text-sm" role="status">
+            {query.message}
           </p>
-        </div>
+        ) : null}
+        {query.error ? (
+          <p className="rounded-xl bg-warn-soft px-4 py-3 text-sm" role="alert">
+            {query.error}
+          </p>
+        ) : null}
 
-        <Card className="gap-2">
-          <CardTitle>집결 장소</CardTitle>
-          <div className="flex items-start gap-2">
-            <MapPin className="mt-0.5 size-5 text-info" />
-            <p className="text-sm font-semibold leading-relaxed">
-              {room.origin} 정문 앞 택시 승강장
-            </p>
+        <Card className="gap-3 bg-foreground text-background">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-background/70">현재 이동 상태</p>
+              <h1 className="mt-1 text-xl font-extrabold">
+                {trip.status === 'CONFIRMED'
+                  ? '출발 준비'
+                  : trip.status === 'IN_PROGRESS'
+                    ? '이동 중'
+                    : trip.status === 'SETTLEMENT_PENDING'
+                      ? '정산 확인 중'
+                      : '이용 완료'}
+              </h1>
+            </div>
+            <StatusBadge tone="brand">
+              확정 {trip.escrowParticipantCount}명
+            </StatusBadge>
           </div>
+          <p className="flex items-start gap-2 text-sm text-background/80">
+            <MapPin className="mt-0.5 size-4 shrink-0" aria-hidden />
+            저장된 출발지 {trip.origin}에서 집결합니다.
+          </p>
         </Card>
 
         <Card className="gap-3">
-          <CardTitle>참여자 체크인</CardTitle>
-          <div className="flex flex-col gap-2">
-            {participants.map((p, i) => {
-              const isMe = i === 1
-              const checked = isMe ? arrived : p.checkedIn
-              return (
-                <div key={i} className="flex items-center gap-3">
-                  <Avatar name={p.name} index={i} size="sm" />
-                  <span className="text-sm font-semibold">
-                    {maskName(p.name)}
-                    {isMe ? ' (나)' : ''}
-                  </span>
-                  {checked ? (
-                    <StatusBadge tone="mint" className="ml-auto" icon={Check}>
-                      도착
-                    </StatusBadge>
-                  ) : (
-                    <StatusBadge tone="muted" className="ml-auto" icon={Clock}>
-                      이동 중
-                    </StatusBadge>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => toast('채팅방은 준비 중이에요. (UI 목업)')}
-            className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-bold"
-          >
-            <MessageCircle className="size-4" />
-            채팅방 열기
-          </button>
-        </Card>
-
-        <Card className="gap-1.5 border-info/30 bg-info-soft">
-          <div className="flex items-center gap-1.5 text-sm font-bold text-info">
-            <ShieldCheck className="size-4" />
-            안전 안내
-          </div>
-          <p className="text-sm leading-relaxed text-foreground/80">
-            낯선 사람과의 이동 전, 집결 장소와 참여자 정보를 확인하세요.
+          <CardTitle>확정 참여자</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            노쇼도 예치 당시 확정 인원에 포함되어 동일한 최종 분담액을 부담합니다.
           </p>
+          <ul className="flex flex-col gap-3">
+            {participants.map((participant, index) => (
+              <li
+                key={participant.userId}
+                className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/60 p-3"
+              >
+                <Avatar name={participant.name} index={index} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">
+                    {participant.name}
+                    {participant.userId === user.userId ? ' (나)' : ''}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    예치 {Number(participant.depositAmount).toLocaleString('ko-KR')}P
+                  </p>
+                </div>
+                <ParticipantBadge status={participant.status} />
+                {isHost &&
+                trip.status === 'IN_PROGRESS' &&
+                participant.role !== 'HOST' &&
+                participant.status === 'DEPOSITED' ? (
+                  <form action={markNoShowAction} className="basis-full">
+                    <input type="hidden" name="tripId" value={trip.tripId} />
+                    <input
+                      type="hidden"
+                      name="participantId"
+                      value={participant.userId}
+                    />
+                    <input
+                      type="hidden"
+                      name="idempotencyKey"
+                      value={randomUUID()}
+                    />
+                    <PendingSubmitButton
+                      pendingLabel="노쇼 기록 중..."
+                      className="min-h-10 bg-warn py-2 text-sm text-warn-foreground"
+                    >
+                      <UserX className="size-4" aria-hidden />
+                      노쇼 기록
+                    </PendingSubmitButton>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </Card>
-      </div>
+      </main>
 
       <BottomBar className="flex flex-col gap-2">
-        <BigButton
-          tone={arrived ? 'mint' : 'primary'}
-          onClick={() => {
-            setArrived(true)
-            toast('도착 체크인 완료!', 'success')
-          }}
-        >
-          {arrived ? (
-            <>
-              <Check className="size-5" />
-              도착 완료
-            </>
-          ) : (
-            '내가 도착했어요'
-          )}
-        </BigButton>
-        <BigButton tone="outline" onClick={() => router.push(`/room/${room.id}/settle`)}>
-          도착 후 정산하기
-        </BigButton>
+        {isHost && trip.status === 'CONFIRMED' ? (
+          <form action={startTripAction}>
+            <input type="hidden" name="tripId" value={trip.tripId} />
+            <input
+              type="hidden"
+              name="idempotencyKey"
+              value={randomUUID()}
+            />
+            <PendingSubmitButton pendingLabel="이동 시작 중...">
+              이동 시작
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        {canCheckIn ? (
+          <form action={checkInAction}>
+            <input type="hidden" name="tripId" value={trip.tripId} />
+            <input
+              type="hidden"
+              name="idempotencyKey"
+              value={randomUUID()}
+            />
+            <PendingSubmitButton pendingLabel="체크인 중...">
+              <Check className="size-5" aria-hidden />
+              도착 체크인
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        {trip.status === 'IN_PROGRESS' ||
+        trip.status === 'SETTLEMENT_PENDING' ||
+        trip.status === 'COMPLETED' ? (
+          <Link
+            href={
+              trip.status === 'COMPLETED'
+                ? `/room/${trip.tripId}/settle/complete`
+                : `/room/${trip.tripId}/settle`
+            }
+            className="flex min-h-12 items-center justify-center rounded-full border border-border bg-background px-6 py-3 text-[17px]"
+          >
+            {trip.status === 'IN_PROGRESS' ? '실제 요금 정산' : '정산 현황 보기'}
+          </Link>
+        ) : null}
       </BottomBar>
     </MobileShell>
   )
 }
 
-function maskName(name: string) {
-  if (name.length <= 1) return name
-  return name[0] + '*'.repeat(name.length - 1)
+async function getJourney(userId: string, tripId: string) {
+  try {
+    return await getTripJourney(userId, tripId)
+  } catch (error) {
+    if (error instanceof CoreError) notFound()
+    throw error
+  }
+}
+
+function ParticipantBadge({ status }: { status: string }) {
+  if (status === 'CHECKED_IN') {
+    return (
+      <StatusBadge tone="mint" icon={Check}>
+        체크인
+      </StatusBadge>
+    )
+  }
+  if (status === 'NO_SHOW') {
+    return (
+      <StatusBadge tone="warn" icon={UserX}>
+        노쇼
+      </StatusBadge>
+    )
+  }
+  if (status === 'COMPLETED') {
+    return <StatusBadge tone="mint">정산 완료</StatusBadge>
+  }
+  return (
+    <StatusBadge tone="muted" icon={Clock}>
+      대기 중
+    </StatusBadge>
+  )
 }

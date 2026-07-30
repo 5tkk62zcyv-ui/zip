@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { Clock, MapPin, ShieldCheck, UsersRound } from 'lucide-react'
 import {
   approveFromRoomAction,
@@ -57,6 +58,13 @@ export default async function RoomDetailPage({
   )
   const canApprove =
     isHost && room.status === 'OPEN' && departureOpen && !isAtCapacity
+  const canEnterJourney =
+    ['CONFIRMED', 'IN_PROGRESS', 'SETTLEMENT_PENDING', 'COMPLETED'].includes(
+      room.status,
+    ) &&
+    ['DEPOSITED', 'CHECKED_IN', 'NO_SHOW', 'COMPLETED'].includes(
+      room.currentUserStatus ?? '',
+    )
 
   return (
     <MobileShell withTabBar={false}>
@@ -231,7 +239,20 @@ export default async function RoomDetailPage({
         </Card>
       </main>
 
-      {!isHost ? (
+      {canEnterJourney ? (
+        <BottomBar>
+          <Link
+            href={
+              room.status === 'COMPLETED'
+                ? `/room/${room.tripId}/settle/complete`
+                : `/room/${room.tripId}/gathering`
+            }
+            className="flex min-h-12 items-center justify-center rounded-full bg-primary px-6 py-3 text-[17px] text-primary-foreground"
+          >
+            {room.status === 'COMPLETED' ? '정산 결과 보기' : '집결·이동 화면'}
+          </Link>
+        </BottomBar>
+      ) : !isHost ? (
         <BottomBar>
           {canApply ? (
             <form action={applyFromRoomAction}>

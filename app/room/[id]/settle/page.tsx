@@ -1,218 +1,226 @@
-'use client'
-
-import { useParams, useRouter } from 'next/navigation'
-import { useState } from 'react'
-import { Camera, Info, Receipt } from 'lucide-react'
+import { randomUUID } from 'node:crypto'
+import Link from 'next/link'
+import { notFound, redirect } from 'next/navigation'
+import { Calculator, Check, Info, UserX } from 'lucide-react'
+import {
+  confirmJourneyFareAction,
+  settleJourneyAction,
+  submitJourneyFareAction,
+} from '@/app/core/actions'
+import { BottomBar } from '@/components/bottom-bar'
 import { MobileShell } from '@/components/mobile-shell'
+import { PendingSubmitButton } from '@/components/pending-submit-button'
+import { StatusBadge } from '@/components/status-badge'
 import { TopBar } from '@/components/top-bar'
 import { Card, CardTitle } from '@/components/ui/card'
-import { BottomBar, BigButton } from '@/components/bottom-bar'
-import { useApp } from '@/components/app-provider'
-import { formatPoints, formatWon, getRoomById } from '@/lib/mock-data'
-import { cn } from '@/lib/utils'
+import { requireCompleteUser } from '@/lib/auth/session'
+import { CoreError, getTripJourney } from '@/lib/core/service'
 
-export default function SettlePage() {
-  const params = useParams<{ id: string }>()
-  const router = useRouter()
-  const { rooms, settleAdjust, toast } = useApp()
-  const room = rooms.find((r) => r.id === params.id) ?? getRoomById(params.id)
+export const dynamic = 'force-dynamic'
 
-  const [view, setView] = useState<'host' | 'member'>('host')
-  const [fare, setFare] = useState(13500)
-
-  if (!room) return null
-
-  const confirmed = 3
-  const deposit = round100(room.estimatedFare / confirmed)
-  const finalShare = round100(fare / confirmed)
-  const diff = finalShare - deposit // >0 추가 차감, <0 반환
-
-  function finish() {
-    settleAdjust(diff)
-    toast('정산이 진행되었어요.', 'success')
-    router.push(`/room/${room!.id}/settle/complete?fare=${fare}`)
+export default async function SettlePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ message?: string; error?: string }>
+}) {
+  const user = await requireCompleteUser()
+  const [{ id }, query] = await Promise.all([params, searchParams])
+  const journey = await getJourney(user.userId, id)
+  const { trip, participants, settlement } = journey
+  if (trip.status === 'COMPLETED') {
+    redirect(`/room/${trip.tripId}/settle/complete`)
   }
+  const isHost = trip.hostUserId === user.userId
+  const canSubmit = isHost && trip.status === 'IN_PROGRESS' && !settlement
+  const canConfirm =
+    trip.status === 'SETTLEMENT_PENDING' &&
+    settlement?.status === 'PENDING_CONFIRMATION' &&
+    !settlement.currentUserConfirmed
+  const allConfirmed =
+    settlement &&
+    settlement.confirmationCount === settlement.participantCount
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar title="정산" subtitle={`${room.origin} → ${room.destination}`} backHref={`/room/${room.id}`} />
+      <TopBar
+        title="실제 요금 정산"
+        subtitle={`${trip.origin} → ${trip.destination}`}
+        backHref={`/room/${trip.tripId}/gathering`}
+      />
 
-      <div className="flex flex-1 flex-col gap-4 px-5 py-4">
-        <div className="flex items-center gap-1 rounded-full bg-muted p-1 text-xs font-semibold">
-          {[
-            { v: 'host', label: '방장 화면' },
-            { v: 'member', label: '참여자 화면' },
-          ].map((o) => (
-            <button
-              key={o.v}
-              type="button"
-              onClick={() => setView(o.v as 'host' | 'member')}
-              className={cn(
-                'flex-1 rounded-full py-2 transition-colors',
-                view === o.v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground',
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
+      <main className="flex flex-1 flex-col gap-4 px-5 py-4 pb-32">
+        {query.message ? (
+          <p className="rounded-xl bg-mint-soft px-4 py-3 text-sm" role="status">
+            {query.message}
+          </p>
+        ) : null}
+        {query.error ? (
+          <p className="rounded-xl bg-warn-soft px-4 py-3 text-sm" role="alert">
+            {query.error}
+          </p>
+        ) : null}
 
-        {view === 'host' ? (
-          <>
-            <div>
-              <h2 className="text-lg font-extrabold">실제 택시비를 입력해주세요</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                미터기 요금을 입력하면 자동으로 정산돼요.
-              </p>
-            </div>
-
-            <Card className="gap-2">
-              <label className="text-sm font-bold">실제 택시비</label>
-              <div className="relative">
-                <input
-                  inputMode="numeric"
-                  value={fare}
-                  onChange={(e) =>
-                    setFare(Number(e.target.value.replace(/\D/g, '')) || 0)
-                  }
-                  className="app-input pr-10 text-lg font-bold"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground">
-                  원
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => toast('영수증 첨부는 준비 중이에요. (UI 목업)')}
-                className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-3 text-sm font-semibold text-muted-foreground"
+        <Card className="gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle>정산 대상</CardTitle>
+            <StatusBadge tone="brand">
+              예치 확정 {trip.escrowParticipantCount}명
+            </StatusBadge>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {participants.map((participant) => (
+              <li
+                key={participant.userId}
+                className="flex items-center justify-between gap-3 text-sm"
               >
-                <Camera className="size-4" />
-                영수증 사진 첨부
-              </button>
-            </Card>
+                <span className="font-semibold">{participant.name}</span>
+                {participant.status === 'NO_SHOW' ? (
+                  <StatusBadge tone="warn" icon={UserX}>
+                    노쇼·정산 포함
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge tone="mint" icon={Check}>
+                    정산 포함
+                  </StatusBadge>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="flex gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground">
+            <Info className="size-4 shrink-0" aria-hidden />
+            노쇼가 발생해도 예치 당시 인원으로 나누며 탑승자에게 부담을 재배분하지
+            않습니다.
+          </p>
+        </Card>
 
-            <SettlePreview
-              fare={fare}
-              confirmed={confirmed}
-              finalShare={finalShare}
-              deposit={deposit}
-              diff={diff}
-            />
-
-            <p className="flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
-              <Info className="mt-0.5 size-3.5 shrink-0" />
-              노쇼가 발생해도 확정 인원({confirmed}명) 기준으로 비용을 나눠요.
-            </p>
-          </>
-        ) : (
-          <>
-            <div>
-              <h2 className="text-lg font-extrabold">정산 내용을 확인해주세요</h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                방장이 입력한 실제 요금 기준이에요.
-              </p>
-            </div>
-
-            <Card className="gap-2">
-              <Row label="실제 총 택시비" value={formatWon(fare)} />
-              <Row label="확정 인원" value={`${confirmed}명`} />
-              <div className="border-t border-border pt-2">
-                <Row label="내 최종 부담" value={formatPoints(finalShare)} emphasize />
-              </div>
-              <Row label="예치 포인트" value={formatPoints(deposit)} />
-              <Row
-                label={diff >= 0 ? '추가 차감 예정' : '반환 예정'}
-                value={`${diff >= 0 ? '-' : '+'} ${formatPoints(Math.abs(diff))}`}
-                tone={diff >= 0 ? 'warn' : 'mint'}
+        {canSubmit ? (
+          <Card className="gap-3">
+            <CardTitle>실제 총요금 입력</CardTitle>
+            <form action={submitJourneyFareAction} className="flex flex-col gap-3">
+              <input type="hidden" name="tripId" value={trip.tripId} />
+              <input
+                type="hidden"
+                name="idempotencyKey"
+                value={randomUUID()}
               />
-            </Card>
+              <label htmlFor="actualFare" className="text-sm font-semibold">
+                실제 택시요금
+              </label>
+              <input
+                id="actualFare"
+                name="actualFare"
+                type="number"
+                min={trip.escrowParticipantCount}
+                max="1000000"
+                step={trip.escrowParticipantCount}
+                required
+                className="app-input"
+                placeholder={`${trip.escrowParticipantCount}명으로 나누어떨어지는 금액`}
+              />
+              <p className="text-xs text-muted-foreground">
+                시연 안전 범위에서는 확정 인원으로 나누어떨어지는 금액을 사용합니다.
+              </p>
+              <PendingSubmitButton pendingLabel="요금 등록 중...">
+                <Calculator className="size-5" aria-hidden />
+                참여자에게 요금 확인 요청
+              </PendingSubmitButton>
+            </form>
+          </Card>
+        ) : null}
 
-            <div className="flex items-center gap-2 rounded-2xl bg-warn-soft px-4 py-3 text-xs leading-relaxed text-foreground/80">
-              <Receipt className="size-4 shrink-0 text-warn" />
-              노쇼가 발생해도 확정 인원 기준으로 정산되는 점을 확인했어요.
-            </div>
-          </>
-        )}
-      </div>
+        {settlement ? (
+          <Card className="gap-3">
+            <CardTitle>정산 미리보기</CardTitle>
+            <Row
+              label="실제 총요금"
+              value={`${Number(settlement.actualFare).toLocaleString('ko-KR')}P`}
+            />
+            <Row
+              label="정산 인원"
+              value={`${settlement.participantCount}명`}
+            />
+            <Row
+              label="1인 최종 부담"
+              value={`${Number(settlement.finalShare).toLocaleString('ko-KR')}P`}
+              strong
+            />
+            <Row
+              label="요금 확인"
+              value={`${settlement.confirmationCount}/${settlement.participantCount}명`}
+            />
+          </Card>
+        ) : null}
+      </main>
 
       <BottomBar className="flex flex-col gap-2">
-        {view === 'host' ? (
-          <BigButton onClick={finish}>참여자에게 정산 요청하기</BigButton>
-        ) : (
-          <>
-            <BigButton onClick={finish}>정산에 동의하기</BigButton>
-            <BigButton
-              tone="outline"
-              onClick={() => toast('이의 제기가 접수되었어요. (UI 목업)', 'warn')}
+        {canConfirm ? (
+          <form action={confirmJourneyFareAction}>
+            <input type="hidden" name="tripId" value={trip.tripId} />
+            <input
+              type="hidden"
+              name="idempotencyKey"
+              value={randomUUID()}
+            />
+            <PendingSubmitButton pendingLabel="동의 처리 중...">
+              실제 요금에 동의
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        {isHost && settlement?.status === 'PENDING_CONFIRMATION' ? (
+          <form action={settleJourneyAction}>
+            <input type="hidden" name="tripId" value={trip.tripId} />
+            <input
+              type="hidden"
+              name="idempotencyKey"
+              value={randomUUID()}
+            />
+            <PendingSubmitButton
+              pendingLabel="정산 중..."
+              disabled={!allConfirmed}
             >
-              이의 제기
-            </BigButton>
-          </>
-        )}
+              {allConfirmed
+                ? '최종 정산 실행'
+                : `참여자 확인 대기 (${settlement.confirmationCount}/${settlement.participantCount})`}
+            </PendingSubmitButton>
+          </form>
+        ) : null}
+        <Link
+          href={`/room/${trip.tripId}/gathering`}
+          className="flex min-h-12 items-center justify-center rounded-full border border-border bg-background px-6 py-3 text-[17px]"
+        >
+          집결 현황으로 돌아가기
+        </Link>
       </BottomBar>
     </MobileShell>
   )
 }
 
-function SettlePreview({
-  fare,
-  confirmed,
-  finalShare,
-  deposit,
-  diff,
-}: {
-  fare: number
-  confirmed: number
-  finalShare: number
-  deposit: number
-  diff: number
-}) {
-  return (
-    <Card className="gap-2 bg-secondary/40">
-      <CardTitle>정산 미리보기</CardTitle>
-      <Row label="실제 택시비" value={formatWon(fare)} />
-      <Row label="확정 인원" value={`${confirmed}명`} />
-      <Row label="1인 최종 부담" value={formatPoints(finalShare)} emphasize />
-      <Row label="기존 예치금" value={formatPoints(deposit)} />
-      <div className="border-t border-border pt-2">
-        <Row
-          label={diff >= 0 ? '추가 차감' : '차액 반환'}
-          value={`${diff >= 0 ? '-' : '+'} ${formatPoints(Math.abs(diff))}`}
-          tone={diff >= 0 ? 'warn' : 'mint'}
-        />
-      </div>
-    </Card>
-  )
+async function getJourney(userId: string, tripId: string) {
+  try {
+    return await getTripJourney(userId, tripId)
+  } catch (error) {
+    if (error instanceof CoreError) notFound()
+    throw error
+  }
 }
 
 function Row({
   label,
   value,
-  emphasize,
-  tone,
+  strong,
 }: {
   label: string
   value: string
-  emphasize?: boolean
-  tone?: 'warn' | 'mint'
+  strong?: boolean
 }) {
   return (
-    <div className="flex items-center justify-between text-sm">
+    <div className="flex items-center justify-between gap-3 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span
-        className={cn(
-          'font-semibold',
-          emphasize && 'text-base font-extrabold text-foreground',
-          tone === 'warn' && 'font-bold text-warn',
-          tone === 'mint' && 'font-bold text-mint',
-        )}
-      >
+      <span className={strong ? 'text-base font-extrabold' : 'font-semibold'}>
         {value}
       </span>
     </div>
   )
-}
-
-function round100(n: number) {
-  return Math.round(n / 100) * 100
 }

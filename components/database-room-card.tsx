@@ -28,6 +28,7 @@ const roomStatusLabels: Record<string, string> = {
   OPEN: '모집 중',
   CLOSED: '모집 종료',
   CONFIRMED: '출발 확정',
+  IN_PROGRESS: '이동 중',
   SETTLEMENT_PENDING: '정산 대기',
   COMPLETED: '이용 완료',
   CANCELLED: '취소됨',

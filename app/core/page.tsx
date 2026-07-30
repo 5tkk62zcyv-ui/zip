@@ -13,7 +13,6 @@ import {
   depositAction,
   grantAction,
   settleAction,
-  submitFareAction,
 } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -157,13 +156,14 @@ export default async function CorePage({
                   ) : null}
                   {!isHost && trip.currentUserStatus ? <p className="mt-3 text-sm font-semibold">내 상태: {trip.currentUserStatus}</p> : null}
 
-                  {isHost && trip.status === 'CONFIRMED' ? (
-                    <form action={submitFareAction} className="mt-3 flex gap-2">
-                      <input type="hidden" name="tripId" value={trip.tripId} />
-                      <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
-                      <input name="actualFare" type="number" min="1" max="1000000" required className="app-input" placeholder="실제 총 요금" />
-                      <MiniSubmit>등록</MiniSubmit>
-                    </form>
+                  {['CONFIRMED', 'IN_PROGRESS'].includes(trip.status) &&
+                  trip.currentUserStatus ? (
+                    <Link
+                      href={`/room/${trip.tripId}/gathering`}
+                      className="mt-3 block rounded-xl bg-primary px-4 py-3 text-center text-sm font-bold"
+                    >
+                      집결·이동 진행
+                    </Link>
                   ) : null}
 
                   {settlement ? (

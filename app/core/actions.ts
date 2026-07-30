@@ -15,8 +15,11 @@ import {
   createTrip,
   fulfillPointRequest,
   grantPoints,
+  checkInParticipant,
+  markParticipantNoShow,
   requestPoints,
   settleTrip,
+  startTrip,
   submitActualFare,
 } from '@/lib/core/service'
 
@@ -366,6 +369,171 @@ export async function settleAction(formData: FormData) {
   const user = await requireCompleteUser()
   await execute(
     () => settleTrip(user.userId, text(formData, 'tripId'), text(formData, 'idempotencyKey')),
+    '최종 정산을 완료했습니다.',
+  )
+}
+
+function finishJourney(
+  tripId: string,
+  page: 'gathering' | 'settle' | 'settle/complete',
+  message: string,
+  error = false,
+): never {
+  revalidatePath('/home')
+  revalidatePath('/my-rooms')
+  revalidatePath(`/room/${tripId}`)
+  revalidatePath(`/room/${tripId}/gathering`)
+  revalidatePath(`/room/${tripId}/settle`)
+  redirect(
+    `/room/${tripId}/${page}?${error ? 'error' : 'message'}=${encodeURIComponent(message)}`,
+  )
+}
+
+async function executeJourney(
+  tripId: string,
+  page: 'gathering' | 'settle' | 'settle/complete',
+  run: () => Promise<void>,
+  success: string,
+) {
+  try {
+    await run()
+  } catch (error) {
+    finishJourney(
+      tripId,
+      page,
+      error instanceof CoreError
+        ? error.message
+        : '요청을 처리하지 못했습니다. 새로고침한 뒤 다시 시도해주세요.',
+      true,
+    )
+  }
+  finishJourney(tripId, page, success)
+}
+
+function requireJourneyUuid(value: string, label: string) {
+  if (!isUuid(value)) {
+    throw new CoreError(`${label} 식별자가 올바르지 않습니다.`)
+  }
+  return value
+}
+
+export async function startTripAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeJourney(
+    tripId,
+    'gathering',
+    () => startTrip(user.userId, tripId, idempotencyKey),
+    '이동을 시작했습니다.',
+  )
+}
+
+export async function checkInAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeJourney(
+    tripId,
+    'gathering',
+    () =>
+      checkInParticipant(
+        user.userId,
+        tripId,
+        idempotencyKey,
+      ),
+    '집결 체크인을 완료했습니다.',
+  )
+}
+
+export async function markNoShowAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const participantId = requireJourneyUuid(
+    text(formData, 'participantId'),
+    '참여자',
+  )
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeJourney(
+    tripId,
+    'gathering',
+    () =>
+      markParticipantNoShow({
+        actorId: user.userId,
+        tripId,
+        participantId,
+        idempotencyKey,
+      }),
+    '참여자를 노쇼로 기록했습니다.',
+  )
+}
+
+export async function submitJourneyFareAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeJourney(
+    tripId,
+    'settle',
+    () =>
+      submitActualFare({
+        actorId: user.userId,
+        tripId,
+        actualFare: Number(text(formData, 'actualFare')),
+        idempotencyKey,
+      }),
+    '실제 요금을 등록했습니다. 참여자 확인을 기다립니다.',
+  )
+}
+
+export async function confirmJourneyFareAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeJourney(
+    tripId,
+    'settle',
+    () =>
+      confirmFare(
+        user.userId,
+        tripId,
+        idempotencyKey,
+      ),
+    '실제 요금에 동의했습니다.',
+  )
+}
+
+export async function settleJourneyAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeJourney(
+    tripId,
+    'settle/complete',
+    () =>
+      settleTrip(
+        user.userId,
+        tripId,
+        idempotencyKey,
+      ),
     '최종 정산을 완료했습니다.',
   )
 }
