@@ -33,7 +33,7 @@ export default async function AdminPage({
 
   return (
     <MobileShell>
-      <TopBar title="관리자 · 포인트 지급" />
+      <TopBar title="관리자 · 포인트 지급" backHref="/home" />
       <main className="flex-1 overflow-y-auto px-5 pb-10 pt-4">
         {message ? (
           <p

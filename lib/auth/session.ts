@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { createHash, createHmac } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import {
@@ -32,6 +32,10 @@ export function createSessionToken(signupAttemptId: string) {
     .digest('base64url')
 }
 
+export function createLoginSessionToken() {
+  return randomBytes(32).toString('base64url')
+}
+
 export function hashSessionToken(token: string) {
   return createHash('sha256').update(token).digest('hex')
 }
@@ -49,6 +53,11 @@ export async function setSessionCookie(token: string, expiresAt: Date) {
     path: '/',
     expires: expiresAt,
   })
+}
+
+export async function clearSessionCookie() {
+  const cookieStore = await cookies()
+  cookieStore.delete(SESSION_COOKIE_NAME)
 }
 
 export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
@@ -91,7 +100,7 @@ export function hasCompleteProfile(user: AuthenticatedUser) {
 
 export async function requireCompleteUser() {
   const user = await getCurrentUser()
-  if (!user || !hasCompleteProfile(user)) redirect('/signup')
+  if (!user || !hasCompleteProfile(user)) redirect('/login')
   return user
 }
 

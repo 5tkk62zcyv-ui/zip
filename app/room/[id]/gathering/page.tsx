@@ -37,7 +37,7 @@ export default function GatheringPage() {
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar title="출발 준비" subtitle={`${room.origin} → ${room.destination}`} />
+      <TopBar title="출발 준비" subtitle={`${room.origin} → ${room.destination}`} backHref={`/room/${room.id}`} />
 
       <div className="flex flex-1 flex-col gap-4 px-5 py-4">
         <div className="flex flex-col items-center rounded-3xl bg-foreground px-6 py-8 text-background">

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { ensureDatabaseIdentity, getDatabase } from '@/lib/db/client'
 import {
   createSessionToken,
+  getCurrentUser,
   getSessionExpiry,
   hashSessionToken,
   setSessionCookie,
@@ -19,6 +20,7 @@ export async function signupAction(
   _previousState: SignupState,
   formData: FormData,
 ): Promise<SignupState> {
+  if (await getCurrentUser()) redirect('/home')
   const parsed = parseSignupForm(formData)
 
   if (!parsed.success) {
@@ -91,6 +93,22 @@ export async function signupAction(
         : ''
 
     if (code === '23505') {
+      const constraint =
+        typeof error === 'object' && error && 'constraint' in error
+          ? String(error.constraint)
+          : ''
+      if (constraint === 'users_student_id_unique') {
+        return {
+          message: '이미 가입된 학번입니다.',
+          fieldErrors: { studentId: ['이미 가입된 학번입니다.'] },
+        }
+      }
+      if (constraint === 'users_school_email_unique') {
+        return {
+          message: '이미 가입된 학교 이메일입니다.',
+          fieldErrors: { schoolEmail: ['이미 가입된 학교 이메일입니다.'] },
+        }
+      }
       return { message: '이미 가입된 학번 또는 학교 이메일입니다.' }
     }
 

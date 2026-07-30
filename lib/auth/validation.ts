@@ -33,6 +33,18 @@ export const signupSchema = z.object({
 
 export type SignupInput = z.infer<typeof signupSchema>
 
+export const loginSchema = z.object({
+  studentId: z
+    .string()
+    .trim()
+    .regex(/^\d{9}$/, '학번은 숫자 9자리로 입력해주세요.'),
+  name: z
+    .string()
+    .trim()
+    .min(1, '이름을 입력해주세요.')
+    .max(80, '이름은 80자 이하여야 합니다.'),
+})
+
 export function parseSignupForm(formData: FormData) {
   return signupSchema.safeParse({
     signupAttemptId: formData.get('signupAttemptId'),
@@ -41,5 +53,12 @@ export function parseSignupForm(formData: FormData) {
     gender: formData.get('gender'),
     schoolEmail: formData.get('schoolEmail'),
     privacyConsent: formData.get('privacyConsent'),
+  })
+}
+
+export function parseLoginForm(formData: FormData) {
+  return loginSchema.safeParse({
+    studentId: formData.get('studentId'),
+    name: formData.get('name'),
   })
 }

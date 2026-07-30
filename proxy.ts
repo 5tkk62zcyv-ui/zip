@@ -17,7 +17,7 @@ export function proxy(request: NextRequest) {
   )
 
   if (isProtected && !request.cookies.has(SESSION_COOKIE_NAME)) {
-    return NextResponse.redirect(new URL('/signup', request.url))
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   return NextResponse.next()

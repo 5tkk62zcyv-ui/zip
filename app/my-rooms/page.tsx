@@ -17,7 +17,7 @@ export default async function MyRoomsPage() {
 
   return (
     <MobileShell>
-      <TopBar title="내 방" back={false} />
+      <TopBar title="내 방" backHref="/home" />
       <main className="flex-1 px-5 pb-4 pt-4">
         <section className="mb-7" aria-labelledby="hosted-rooms-heading">
           <div className="mb-3 flex items-center gap-2">

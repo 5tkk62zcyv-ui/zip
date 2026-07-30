@@ -21,7 +21,7 @@ export default function SignupPage() {
 
   return (
     <MobileShell withTabBar={false} className="bg-background">
-      <TopBar title="회원가입" subtitle="택시타쉐어 이용을 위한 기본 정보" />
+      <TopBar title="회원가입" subtitle="택시타쉐어 이용을 위한 기본 정보" backHref="/" />
 
       <form action={action} className="flex flex-1 flex-col">
         <input
@@ -80,7 +80,7 @@ export default function SignupPage() {
 
           <fieldset>
             <legend className="mb-2 text-sm font-bold">성별</legend>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {[
                 ['female', '여성'],
                 ['male', '남성'],

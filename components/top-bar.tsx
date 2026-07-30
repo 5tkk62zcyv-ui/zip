@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -8,6 +8,7 @@ export function TopBar({
   title,
   subtitle,
   back = true,
+  backHref = '/home',
   onBack,
   right,
   className,
@@ -15,11 +16,11 @@ export function TopBar({
   title: string
   subtitle?: string
   back?: boolean
+  backHref?: string
   onBack?: () => void
   right?: React.ReactNode
   className?: string
 }) {
-  const router = useRouter()
   return (
     <header
       className={cn(
@@ -28,14 +29,15 @@ export function TopBar({
       )}
     >
       {back ? (
-        <button
-          type="button"
-          onClick={() => (onBack ? onBack() : router.back())}
-          aria-label="뒤로가기"
-          className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:scale-95"
-        >
-          <ChevronLeft className="size-5" />
-        </button>
+        onBack ? (
+          <button type="button" onClick={onBack} aria-label="뒤로가기" className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:scale-95">
+            <ChevronLeft className="size-5" />
+          </button>
+        ) : (
+          <Link href={backHref} aria-label="뒤로가기" className="flex size-11 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted active:scale-95">
+            <ChevronLeft className="size-5" />
+          </Link>
+        )
       ) : (
         <span className="w-1" />
       )}

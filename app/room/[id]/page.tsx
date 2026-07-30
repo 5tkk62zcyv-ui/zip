@@ -60,7 +60,7 @@ export default async function RoomDetailPage({
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar title="동승 방 상세" subtitle={`방장 ${maskName(room.hostName)}`} />
+      <TopBar title="동승 방 상세" subtitle={`방장 ${maskName(room.hostName)}`} backHref="/my-rooms" />
 
       <main className="flex flex-1 flex-col gap-4 px-5 py-4 pb-28">
         {query.message ? (

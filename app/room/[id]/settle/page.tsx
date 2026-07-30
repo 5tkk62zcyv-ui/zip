@@ -35,7 +35,7 @@ export default function SettlePage() {
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar title="정산" subtitle={`${room.origin} → ${room.destination}`} />
+      <TopBar title="정산" subtitle={`${room.origin} → ${room.destination}`} backHref={`/room/${room.id}`} />
 
       <div className="flex flex-1 flex-col gap-4 px-5 py-4">
         <div className="flex items-center gap-1 rounded-full bg-muted p-1 text-xs font-semibold">

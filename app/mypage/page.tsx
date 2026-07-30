@@ -16,6 +16,7 @@ import {
   LogOut,
   GraduationCap,
 } from 'lucide-react'
+import { logoutAction } from './actions'
 
 export default function MyPage() {
   const router = useRouter()
@@ -34,7 +35,7 @@ export default function MyPage() {
     <MobileShell>
       <TopBar
         title="마이페이지"
-        back={false}
+        backHref="/home"
         right={
           <button
             type="button"
@@ -105,14 +106,15 @@ export default function MyPage() {
           ))}
         </div>
 
+        <form action={logoutAction}>
         <button
-          type="button"
-          onClick={() => router.push('/')}
+          type="submit"
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           <LogOut className="size-4" aria-hidden />
           로그아웃
         </button>
+        </form>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">택시타쉐어 v0.1 · 전북대 캠퍼스 시범</p>
       </div>

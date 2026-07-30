@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { signupSchema } from './validation'
+import { loginSchema, signupSchema } from './validation'
 
 const valid = {
   signupAttemptId: '123e4567-e89b-42d3-a456-426614174000',
@@ -35,5 +35,20 @@ describe('signupSchema', () => {
     ['missing consent', { privacyConsent: undefined }],
   ])('rejects %s', (_name, patch) => {
     expect(signupSchema.safeParse({ ...valid, ...patch }).success).toBe(false)
+  })
+})
+
+describe('loginSchema', () => {
+  it('normalizes a valid MVP login', () => {
+    expect(loginSchema.parse({ studentId: ' 202134567 ', name: ' 김민지 ' }))
+      .toEqual({ studentId: '202134567', name: '김민지' })
+  })
+
+  it.each([
+    { studentId: '20213456', name: '김민지' },
+    { studentId: '20213456A', name: '김민지' },
+    { studentId: '202134567', name: '   ' },
+  ])('rejects invalid MVP login: %o', (input) => {
+    expect(loginSchema.safeParse(input).success).toBe(false)
   })
 })

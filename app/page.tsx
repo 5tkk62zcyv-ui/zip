@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { ArrowRight, MapPin, Sparkles, ShieldCheck } from 'lucide-react'
+import { redirect } from 'next/navigation'
 import { MobileShell } from '@/components/mobile-shell'
 import { BrandLogo, TaxiMark } from '@/components/brand-logo'
+import { getCurrentUser } from '@/lib/auth/session'
 
-export default function OnboardingPage() {
+export default async function OnboardingPage() {
+  if (await getCurrentUser()) redirect('/home')
   return (
     <MobileShell withTabBar={false} className="bg-background">
       <div className="flex flex-1 flex-col px-6 pb-8 pt-12">
@@ -11,7 +14,7 @@ export default function OnboardingPage() {
 
         <div className="flex flex-1 flex-col items-center justify-center text-center">
           <div className="relative mb-8">
-            <TaxiMark className="size-28 rounded-[18px]" />
+            <TaxiMark className="size-56" />
             <span className="absolute -right-3 -top-3 flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground">
               <Sparkles className="size-3.5" />
               AI 추천
@@ -36,13 +39,15 @@ export default function OnboardingPage() {
           </ul>
         </div>
 
-        <Link
-          href="/signup"
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-[17px] font-normal text-primary-foreground transition-transform active:scale-95"
-        >
-          시작하기
-          <ArrowRight className="size-5" />
-        </Link>
+        <div className="grid grid-cols-2 gap-3">
+          <Link href="/login" className="flex min-h-12 items-center justify-center rounded-full bg-primary px-6 py-3 text-[17px] text-primary-foreground transition-transform active:scale-95">
+            로그인
+          </Link>
+          <Link href="/signup" className="flex min-h-12 items-center justify-center gap-2 rounded-full border border-primary px-6 py-3 text-[17px] text-primary transition-transform active:scale-95">
+            회원가입
+            <ArrowRight className="size-5" />
+          </Link>
+        </div>
         <p className="mt-3 text-center text-xs text-muted-foreground">
           대학생을 위한 택시 동승·비용 분담 서비스
         </p>

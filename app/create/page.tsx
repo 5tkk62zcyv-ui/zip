@@ -79,7 +79,7 @@ export default function CreateRoomPage() {
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar title="동승 방 만들기" subtitle="장소와 출발 조건을 입력해 주세요" />
+      <TopBar title="동승 방 만들기" subtitle="장소와 출발 조건을 입력해 주세요" backHref="/home" />
       <form action={action} className="flex flex-1 flex-col">
         <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
         <input type="hidden" name="departureAt" value={departureAt} />
