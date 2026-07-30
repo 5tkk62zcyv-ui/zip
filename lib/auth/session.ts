@@ -8,6 +8,10 @@ import {
   getDatabase,
   hasDatabaseConfiguration,
 } from '@/lib/db/client'
+import {
+  DEMO_ADMIN_STUDENT_ID,
+  isDemoAdminLoginAllowed,
+} from '@/lib/auth/demo-admin'
 
 export const SESSION_COOKIE_NAME = 'taxitashare_session'
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
@@ -107,5 +111,15 @@ export async function requireCompleteUser() {
 export async function requireAdmin() {
   const user = await requireCompleteUser()
   if (user.role !== 'ADMIN') redirect('/home')
+  if (
+    user.studentId === DEMO_ADMIN_STUDENT_ID &&
+    !isDemoAdminLoginAllowed({
+      studentId: user.studentId,
+      name: user.name,
+      enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
+    })
+  ) {
+    redirect('/home')
+  }
   return user
 }

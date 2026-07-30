@@ -7,18 +7,26 @@ describe('isDemoAdminLoginAllowed', () => {
       isDemoAdminLoginAllowed({
         studentId: '123456789',
         name: '택시타쉐어관리자',
-        nodeEnv: 'development',
         enabled: 'true',
       }),
     ).toBe(true)
   })
 
-  it('always blocks the demo admin login in production', () => {
+  it('blocks the demo admin login when the explicit flag is disabled', () => {
     expect(
       isDemoAdminLoginAllowed({
         studentId: '123456789',
         name: '택시타쉐어관리자',
-        nodeEnv: 'production',
+        enabled: undefined,
+      }),
+    ).toBe(false)
+  })
+
+  it('blocks every other identity even when the flag is enabled', () => {
+    expect(
+      isDemoAdminLoginAllowed({
+        studentId: '123456788',
+        name: '택시타쉐어관리자',
         enabled: 'true',
       }),
     ).toBe(false)

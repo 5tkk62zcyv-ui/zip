@@ -35,7 +35,6 @@ export async function loginAction(
   const demoAdminAllowed = isDemoAdminLoginAllowed({
     studentId: parsed.data.studentId,
     name: parsed.data.name,
-    nodeEnv: process.env.NODE_ENV,
     enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
   })
 
