@@ -9,7 +9,7 @@ export function BottomBar({
   className?: string
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[680px]">
+    <div className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[1068px]">
       <div
         className={cn(
           'border-t border-border/80 bg-background/80 px-5 pb-[max(env(safe-area-inset-bottom),1rem)] pt-3 backdrop-blur-xl backdrop-saturate-150',

@@ -9,6 +9,13 @@ const toneStyles: Record<Tone, string> = {
   warn: 'bg-warn-soft text-warn',
   muted: 'bg-muted text-muted-foreground',
 }
+const toneLabels: Record<Tone, string> = {
+  brand: '주요 상태',
+  mint: '완료 상태',
+  info: '안내 상태',
+  warn: '주의 상태',
+  muted: '일반 상태',
+}
 
 export function StatusBadge({
   children,
@@ -29,6 +36,7 @@ export function StatusBadge({
         className,
       )}
     >
+      <span className="sr-only">{toneLabels[tone]}: </span>
       {Icon ? <Icon className="size-3.5" /> : null}
       {children}
     </span>

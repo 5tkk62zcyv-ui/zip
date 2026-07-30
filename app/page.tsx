@@ -23,13 +23,13 @@ export default function OnboardingPage() {
             <br />
             택시비도 함께 나눠요
           </h1>
-          <p className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-5 text-pretty text-[17px] leading-relaxed text-muted-foreground">
             가까운 출발지와 비슷한 목적지의
             <br />
             동승 방을 찾아드려요.
           </p>
 
-          <ul className="mt-8 flex w-full flex-col gap-2.5 text-left">
+          <ul className="mt-10 flex w-full flex-col gap-0 text-left">
             <Feature icon={MapPin} text="내 주변 출발지와 가까운 방을 우선 추천" />
             <Feature icon={Sparkles} text="AI가 우회 시간까지 계산해 매칭" />
             <Feature icon={ShieldCheck} text="확정 인원 기준의 투명한 포인트 정산" />
@@ -59,11 +59,11 @@ function Feature({
   text: string
 }) {
   return (
-    <li className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
+    <li className="flex items-center gap-4 border-b border-border px-2 py-5 last:border-b-0">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">
         <Icon className="size-5" />
       </span>
-      <span className="text-sm font-medium">{text}</span>
+      <span className="text-[17px] font-normal leading-relaxed">{text}</span>
     </li>
   )
 }

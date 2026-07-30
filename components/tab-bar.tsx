@@ -18,7 +18,7 @@ export function TabBar() {
   return (
     <nav
       aria-label="주요 메뉴"
-      className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[680px]"
+      className="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[1068px]"
     >
       <div className="relative border-t border-border/80 bg-card/80 backdrop-blur-xl backdrop-saturate-150">
         <ul className="flex items-stretch justify-between px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
