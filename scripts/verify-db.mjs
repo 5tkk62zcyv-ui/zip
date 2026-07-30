@@ -28,6 +28,9 @@ const confirmationGuardMigrationChecksum = createHash('sha256')
     ),
   )
   .digest('hex')
+const participationGuardMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0007_participation_state_guards.sql'))
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -100,6 +103,13 @@ try {
           AND checksum = $6
           AND environment = $1
       ) AS confirmation_guard_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0007_participation_state_guards'
+          AND checksum = $7
+          AND environment = $1
+      ) AS participation_guard_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -254,7 +264,31 @@ try {
             OR f.deposit_points_total IS DISTINCT FROM g.estimated_fare
             OR f.expires_at <= now()
           )
-      ) AS confirmed_fare_evidence_valid
+      ) AS confirmed_fare_evidence_valid,
+      EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'trip_participants'::regclass
+          AND tgname = 'trip_participants_require_open_trip'
+          AND NOT tgisinternal
+      ) AS participation_open_guard_exists,
+      EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'trip_groups'::regclass
+          AND tgname = 'trip_groups_guard_capacity_change'
+          AND NOT tgisinternal
+      ) AS capacity_change_guard_exists,
+      (
+        SELECT count(*) = 0
+        FROM trip_participants p
+        JOIN users u ON u.user_id = p.user_id
+        WHERE p.status IN ('APPLIED', 'APPROVED')
+          AND (
+            u.account_status <> 'ACTIVE'
+            OR nullif(btrim(u.student_id), '') IS NULL
+            OR nullif(btrim(u.name), '') IS NULL
+            OR nullif(btrim(u.school_email), '') IS NULL
+          )
+      ) AS active_participant_users_valid
   `, [
     expectedEnvironment,
     expectedFingerprint,
@@ -262,6 +296,7 @@ try {
     lifecycleMigrationChecksum,
     fareEvidenceMigrationChecksum,
     confirmationGuardMigrationChecksum,
+    participationGuardMigrationChecksum,
   ])
 
   const verification = result.rows[0]

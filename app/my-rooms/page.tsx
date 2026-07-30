@@ -1,55 +1,68 @@
-'use client'
-
-import { useApp } from '@/components/app-provider'
-import { MobileShell } from '@/components/mobile-shell'
-import { TopBar } from '@/components/top-bar'
-import { TabBar } from '@/components/tab-bar'
-import { RoomCard } from '@/components/room-card'
-import { EmptyState } from '@/components/empty-state'
 import { Car, UsersRound } from 'lucide-react'
+import { DatabaseRoomCard } from '@/components/database-room-card'
+import { EmptyState } from '@/components/empty-state'
+import { MobileShell } from '@/components/mobile-shell'
+import { TabBar } from '@/components/tab-bar'
+import { TopBar } from '@/components/top-bar'
+import { requireCompleteUser } from '@/lib/auth/session'
+import { getCoreDashboard } from '@/lib/core/service'
 
-export default function MyRoomsPage() {
-  const { rooms, joinedRoomIds, user } = useApp()
-
-  const hosted = rooms.filter((r) => r.members.some((m) => m.role === 'host' && m.displayName === user.name))
-  const joined = rooms.filter((r) => joinedRoomIds.includes(r.id))
+export default async function MyRoomsPage() {
+  const user = await requireCompleteUser()
+  const data = await getCoreDashboard(user.userId, user.role === 'ADMIN')
+  const hosted = data.trips.filter((room) => room.hostUserId === user.userId)
+  const joined = data.trips.filter(
+    (room) => room.hostUserId !== user.userId && room.currentUserStatus !== null,
+  )
 
   return (
     <MobileShell>
       <TopBar title="내 방" back={false} />
-      <div className="flex-1 overflow-y-auto px-5 pb-28 pt-4">
-        <section className="mb-6">
+      <main className="flex-1 px-5 pb-4 pt-4">
+        <section className="mb-7" aria-labelledby="hosted-rooms-heading">
           <div className="mb-3 flex items-center gap-2">
             <Car className="size-4 text-primary" aria-hidden />
-            <h2 className="text-sm font-semibold text-foreground">내가 만든 방</h2>
+            <h2 id="hosted-rooms-heading" className="text-sm font-semibold">
+              내가 만든 방
+            </h2>
           </div>
           {hosted.length > 0 ? (
             <div className="flex flex-col gap-3">
               {hosted.map((room) => (
-                <RoomCard key={room.id} room={room} />
+                <DatabaseRoomCard
+                  key={room.tripId}
+                  room={room}
+                  currentUserId={user.userId}
+                />
               ))}
             </div>
           ) : (
-            <EmptyState label="아직 만든 방이 없어요" />
+            <EmptyState label="아직 만든 방이 없습니다." />
           )}
         </section>
 
-        <section>
+        <section aria-labelledby="joined-rooms-heading">
           <div className="mb-3 flex items-center gap-2">
             <UsersRound className="size-4 text-mint" aria-hidden />
-            <h2 className="text-sm font-semibold text-foreground">참여 중인 방</h2>
+            <h2 id="joined-rooms-heading" className="text-sm font-semibold">
+              신청하거나 참여 중인 방
+            </h2>
           </div>
           {joined.length > 0 ? (
             <div className="flex flex-col gap-3">
               {joined.map((room) => (
-                <RoomCard key={room.id} room={room} />
+                <DatabaseRoomCard
+                  key={room.tripId}
+                  room={room}
+                  currentUserId={user.userId}
+                />
               ))}
             </div>
           ) : (
-            <EmptyState label="참여 중인 방이 없어요" />
+            <EmptyState label="신청하거나 참여 중인 방이 없습니다." />
           )}
         </section>
-      </div>
+      </main>
       <TabBar />
     </MobileShell>
   )

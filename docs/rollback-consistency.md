@@ -29,7 +29,11 @@
   적용했고, checksum
   `b13770ab19a1a2b577bdd89942cfb898fe97d15b5651fc770e614397c7b62bfa`,
   보호 트리거와 기존 CONFIRMED 근거 검증이 통과했다.
-- 코드 품질 검증은 lint, TypeScript, 테스트 21건, production build가 통과했다.
+- Sprint 4의 `0007_participation_state_guards`를 운영 DB에 transaction으로
+  적용했고, checksum
+  `c955f9e86f534b0a1f852855334c019099f51ab43fbe9f3a5718d6d3bf65c81f`,
+  OPEN·출발 전·프로필·정원 guard와 참여 상태 부분 인덱스 검증이 통과했다.
+- 코드 품질 검증은 lint, TypeScript, 테스트 56건, production build가 통과했다.
 
 ## 남은 위험과 열린 결정
 
@@ -38,5 +42,6 @@
   완료할 수 있다.
 - Preview/Production 완전 분리, 백업 보유 기간, RPO/RTO, 복구 훈련과 운영 경보는
   아직 결정되지 않아 `TR-07`은 미충족이다.
-- `/core` 백엔드 구현과 주 사용자 화면의 실제 데이터 흐름 연결 및 전체 E2E는
-  별도 후속 작업이다. 스키마 존재만으로 해당 FR을 완료로 간주하지 않는다.
+- 홈·내 모집·모집 상세의 참여 흐름은 실제 DB에 연결됐다. 다만 운영 DB를
+  파괴적 fixture에 사용할 수 없어 마지막 좌석 동시 승인과 전체 브라우저 E2E는
+  별도 Development/Preview Neon에서 후속 검증해야 한다.

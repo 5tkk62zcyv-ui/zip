@@ -45,6 +45,41 @@ async function execute(run: () => Promise<void>, success: string) {
   complete(success)
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function completeRoom(tripId: string, message: string, error = false): never {
+  revalidatePath('/home')
+  revalidatePath('/my-rooms')
+  revalidatePath(`/room/${tripId}`)
+  redirect(
+    `/room/${tripId}?${error ? 'error' : 'message'}=${encodeURIComponent(message)}`,
+  )
+}
+
+async function executeRoom(
+  tripId: string,
+  run: () => Promise<void>,
+  success: string,
+) {
+  try {
+    await run()
+  } catch (error) {
+    completeRoom(
+      tripId,
+      error instanceof CoreError
+        ? error.message
+        : '요청을 처리하지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.',
+      true,
+    )
+  }
+  completeRoom(tripId, success)
+}
+
+function isUuid(value: string) {
+  return UUID_PATTERN.test(value)
+}
+
 export async function createTripAction(formData: FormData) {
   const user = await requireCompleteUser()
   const parsed = parseCreateTripForm(formData)
@@ -131,6 +166,51 @@ export async function approveAction(formData: FormData) {
         idempotencyKey: text(formData, 'idempotencyKey'),
       }),
     '참여를 승인했습니다.',
+  )
+}
+
+export async function applyFromRoomAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = text(formData, 'tripId')
+  const idempotencyKey = text(formData, 'idempotencyKey')
+
+  if (!isUuid(tripId)) {
+    redirect(`/home?error=${encodeURIComponent('올바르지 않은 방 식별자입니다.')}`)
+  }
+  if (!isUuid(idempotencyKey)) {
+    completeRoom(tripId, '요청 식별자가 올바르지 않습니다.', true)
+  }
+
+  await executeRoom(
+    tripId,
+    () => applyToTrip(user.userId, tripId, idempotencyKey),
+    '참여 신청을 보냈습니다. 방장의 승인을 기다려 주세요.',
+  )
+}
+
+export async function approveFromRoomAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = text(formData, 'tripId')
+  const participantId = text(formData, 'participantId')
+  const idempotencyKey = text(formData, 'idempotencyKey')
+
+  if (!isUuid(tripId)) {
+    redirect(`/home?error=${encodeURIComponent('올바르지 않은 방 식별자입니다.')}`)
+  }
+  if (!isUuid(participantId) || !isUuid(idempotencyKey)) {
+    completeRoom(tripId, '승인 요청 정보가 올바르지 않습니다.', true)
+  }
+
+  await executeRoom(
+    tripId,
+    () =>
+      approveParticipant({
+        actorId: user.userId,
+        tripId,
+        participantId,
+        idempotencyKey,
+      }),
+    '참여 신청을 승인했습니다.',
   )
 }
 

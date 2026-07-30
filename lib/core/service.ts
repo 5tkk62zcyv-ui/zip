@@ -44,7 +44,10 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
           g.estimated_fare AS "estimatedFare",
           g.status,
           count(p.user_id) FILTER (
-            WHERE p.status IN ('APPROVED', 'DEPOSITED', 'COMPLETED')
+            WHERE p.status IN (
+              'APPROVED', 'DEPOSITED', 'CHECKED_IN',
+              'NO_SHOW', 'DISPUTED', 'COMPLETED'
+            )
           )::int AS "approvedCount",
           mine.status AS "currentUserStatus"
         FROM trip_groups g
@@ -52,7 +55,6 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
         LEFT JOIN trip_participants p ON p.trip_id = g.trip_id
         LEFT JOIN trip_participants mine
           ON mine.trip_id = g.trip_id AND mine.user_id = ${userId}
-        WHERE g.status <> 'EXPIRED'
         GROUP BY g.trip_id, host.name, mine.status
         ORDER BY g.created_at DESC
       `,
@@ -126,22 +128,29 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
 
 async function inTransaction<T>(run: (client: PoolClient) => Promise<T>) {
   await ensureDatabaseIdentity()
-  const pool = new Pool({ connectionString: getDatabaseUrl(), max: 1 })
-  const client = await pool.connect()
-  try {
-    await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE')
-    await client.query(`SET LOCAL lock_timeout = '5s'`)
-    await client.query(`SET LOCAL statement_timeout = '15s'`)
-    const result = await run(client)
-    await client.query('COMMIT')
-    return result
-  } catch (error) {
-    await client.query('ROLLBACK')
-    throw error
-  } finally {
-    client.release()
-    await pool.end()
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const pool = new Pool({ connectionString: getDatabaseUrl(), max: 1 })
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE')
+      await client.query(`SET LOCAL lock_timeout = '5s'`)
+      await client.query(`SET LOCAL statement_timeout = '15s'`)
+      const result = await run(client)
+      await client.query('COMMIT')
+      return result
+    } catch (error) {
+      await client.query('ROLLBACK')
+      const code =
+        typeof error === 'object' && error && 'code' in error
+          ? String(error.code)
+          : ''
+      if (attempt >= 2 || !['40001', '40P01'].includes(code)) throw error
+    } finally {
+      client.release()
+      await pool.end()
+    }
   }
+  throw new CoreError('동시 요청을 처리하지 못했습니다. 다시 시도해주세요.')
 }
 
 function positiveInteger(value: number, label: string) {
@@ -272,6 +281,17 @@ export async function applyToTrip(
   idempotencyKey: string,
 ) {
   await inTransaction(async (client) => {
+    const replay = await client.query(
+      `SELECT trip_id
+       FROM trip_participants
+       WHERE user_id = $1 AND application_idempotency_key = $2`,
+      [actorId, idempotencyKey],
+    )
+    if (replay.rowCount) {
+      if (replay.rows[0].trip_id === tripId) return
+      throw new CoreError('이미 다른 참여 신청에 사용한 요청 식별자입니다.')
+    }
+
     const trip = await client.query(
       `SELECT host_user_id, status, departure_at
        FROM trip_groups WHERE trip_id = $1 FOR UPDATE`,
@@ -283,13 +303,31 @@ export async function applyToTrip(
     if (row.status !== 'OPEN' || new Date(row.departure_at) <= new Date()) {
       throw new CoreError('모집 중인 방에만 신청할 수 있습니다.')
     }
-    await client.query(
+    const actor = await client.query(
+      `SELECT 1
+       FROM users
+       WHERE user_id = $1
+         AND account_status = 'ACTIVE'
+         AND btrim(student_id) <> ''
+         AND btrim(name) <> ''
+         AND btrim(school_email) <> ''
+       FOR SHARE`,
+      [actorId],
+    )
+    if (!actor.rowCount) {
+      throw new CoreError('가입 필수 정보를 완료한 사용자만 참여할 수 있습니다.')
+    }
+    const inserted = await client.query(
       `INSERT INTO trip_participants
          (trip_id, user_id, role, status, application_idempotency_key)
        VALUES ($1, $2, 'MEMBER', 'APPLIED', $3)
-       ON CONFLICT (trip_id, user_id) DO NOTHING`,
+       ON CONFLICT (trip_id, user_id) DO NOTHING
+       RETURNING user_id`,
       [tripId, actorId, idempotencyKey],
     )
+    if (!inserted.rowCount) {
+      throw new CoreError('이미 이 방에 참여 신청했거나 참여한 사용자입니다.')
+    }
   })
 }
 
@@ -308,8 +346,32 @@ export async function approveParticipant(input: {
     )
     const row = trip.rows[0]
     if (!row || row.host_user_id !== input.actorId) throw new CoreError('방장만 승인할 수 있습니다.')
+    const replay = await client.query(
+      `SELECT user_id
+       FROM trip_participants
+       WHERE trip_id = $1 AND approval_idempotency_key = $2`,
+      [input.tripId, input.idempotencyKey],
+    )
+    if (replay.rowCount) {
+      if (replay.rows[0].user_id === input.participantId) return
+      throw new CoreError('이미 다른 승인에 사용한 요청 식별자입니다.')
+    }
     if (row.status !== 'OPEN' || !row.departure_open) {
       throw new CoreError('출발 전 모집 중인 방에서만 승인할 수 있습니다.')
+    }
+    const participantUser = await client.query(
+      `SELECT 1
+       FROM users
+       WHERE user_id = $1
+         AND account_status = 'ACTIVE'
+         AND btrim(student_id) <> ''
+         AND btrim(name) <> ''
+         AND btrim(school_email) <> ''
+       FOR SHARE`,
+      [input.participantId],
+    )
+    if (!participantUser.rowCount) {
+      throw new CoreError('가입 정보가 완료된 활성 사용자만 승인할 수 있습니다.')
     }
     const count = await client.query(
       `SELECT count(*)::int AS count FROM trip_participants
@@ -326,12 +388,7 @@ export async function approveParticipant(input: {
       [input.tripId, input.participantId, input.idempotencyKey],
     )
     if (!updated.rowCount) {
-      const retry = await client.query(
-        `SELECT 1 FROM trip_participants
-         WHERE trip_id = $1 AND user_id = $2 AND approval_idempotency_key = $3`,
-        [input.tripId, input.participantId, input.idempotencyKey],
-      )
-      if (!retry.rowCount) throw new CoreError('승인 대상을 확인해주세요.')
+      throw new CoreError('승인 대상을 확인해주세요.')
     }
   })
 }
@@ -354,12 +411,7 @@ export async function closeTrip(
     if (!row || row.host_user_id !== actorId) {
       throw new CoreError('방장만 모집을 종료할 수 있습니다.')
     }
-    if (
-      ['CLOSED', 'EXPIRED'].includes(row.status) &&
-      row.close_idempotency_key === idempotencyKey
-    ) {
-      return
-    }
+    if (row.status !== 'OPEN' && row.close_idempotency_key === idempotencyKey) return
     if (row.status !== 'OPEN') throw new CoreError('모집 중인 방만 종료할 수 있습니다.')
     if (!row.departure_open) {
       throw new CoreError('출발 시각이 지난 모집은 자동 종료 대상입니다.')
