@@ -13,6 +13,9 @@ const expectedRole =
 const domainMigrationChecksum = createHash('sha256')
   .update(await readFile('db/migrations/0003_mvp_domain_completion.sql'))
   .digest('hex')
+const lifecycleMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0004_sprint2_trip_lifecycle.sql'))
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -64,6 +67,13 @@ try {
           AND checksum = $3
           AND environment = $1
       ) AS domain_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0004_sprint2_trip_lifecycle'
+          AND checksum = $4
+          AND environment = $1
+      ) AS lifecycle_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -125,8 +135,63 @@ try {
         WHERE tgrelid = 'point_ledger'::regclass
           AND tgname = 'point_ledger_prevent_mutation'
           AND NOT tgisinternal
-      ) AS ledger_append_only
-  `, [expectedEnvironment, expectedFingerprint, domainMigrationChecksum])
+      ) AS ledger_append_only,
+      (
+        SELECT count(*) = 0
+        FROM trip_groups
+        WHERE NOT (
+          (
+            status = 'OPEN'
+            AND closed_at IS NULL
+            AND closure_type IS NULL
+            AND cancelled_at IS NULL
+          )
+          OR (
+            status = 'CANCELLED'
+            AND closed_at IS NOT NULL
+            AND closure_type = 'CANCELLED'
+            AND cancelled_at IS NOT NULL
+          )
+          OR (
+            status IN (
+              'CLOSED', 'CONFIRMED', 'IN_PROGRESS',
+              'SETTLEMENT_PENDING', 'COMPLETED', 'EXPIRED'
+            )
+            AND closed_at IS NOT NULL
+            AND closure_type IN ('AUTO', 'HOST')
+            AND cancelled_at IS NULL
+          )
+        )
+      ) AS trip_lifecycle_valid,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'trip_participants'::regclass
+          AND tgname = 'trip_participants_enforce_capacity'
+          AND NOT tgisinternal
+      ) AS participant_capacity_trigger_exists,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'trip_groups'::regclass
+          AND tgname = 'trip_groups_enforce_closure_count'
+          AND NOT tgisinternal
+      ) AS closure_count_trigger_exists,
+      (
+        SELECT count(*) = 0
+        FROM trip_groups g
+        LEFT JOIN trip_participants p
+          ON p.trip_id = g.trip_id
+         AND p.role = 'HOST'
+         AND p.user_id = g.host_user_id
+        WHERE p.user_id IS NULL
+      ) AS trip_hosts_valid
+  `, [
+    expectedEnvironment,
+    expectedFingerprint,
+    domainMigrationChecksum,
+    lifecycleMigrationChecksum,
+  ])
 
   const verification = result.rows[0]
   const failedChecks = Object.entries(verification ?? {})

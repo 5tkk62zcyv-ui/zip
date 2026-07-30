@@ -3,10 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireAdmin, requireCompleteUser } from '@/lib/auth/session'
+import { parseCreateTripForm } from '@/lib/core/trip-validation'
 import {
   CoreError,
   applyToTrip,
   approveParticipant,
+  cancelTrip,
+  closeTrip,
   confirmFare,
   confirmTripAndDeposit,
   createTrip,
@@ -14,6 +17,11 @@ import {
   settleTrip,
   submitActualFare,
 } from '@/lib/core/service'
+
+export type CreateTripState = {
+  message?: string
+  fieldErrors?: Record<string, string[] | undefined>
+}
 
 function text(formData: FormData, name: string) {
   const value = formData.get(name)
@@ -39,22 +47,69 @@ async function execute(run: () => Promise<void>, success: string) {
 
 export async function createTripAction(formData: FormData) {
   const user = await requireCompleteUser()
+  const parsed = parseCreateTripForm(formData)
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message ?? '입력값을 다시 확인해주세요.'
+    complete(message, true)
+  }
+
   let tripId = ''
   try {
     tripId = await createTrip({
       actorId: user.userId,
-      origin: text(formData, 'origin'),
-      destination: text(formData, 'destination'),
-      departureAt: new Date(text(formData, 'departureAt')),
-      maxParticipants: Number(text(formData, 'maxParticipants')),
-      estimatedFare: Number(text(formData, 'estimatedFare')),
-      idempotencyKey: text(formData, 'idempotencyKey'),
+      ...parsed.data,
     })
   } catch (error) {
     complete(error instanceof CoreError ? error.message : '방을 만들지 못했습니다.', true)
   }
   revalidatePath('/core')
   redirect(`/core?message=${encodeURIComponent('방을 만들었습니다.')}&trip=${tripId}`)
+}
+
+export async function createRoomAction(
+  _previousState: CreateTripState,
+  formData: FormData,
+): Promise<CreateTripState> {
+  const user = await requireCompleteUser()
+  const parsed = parseCreateTripForm(formData)
+
+  if (!parsed.success) {
+    return {
+      message: '입력한 방 정보를 다시 확인해주세요.',
+      fieldErrors: parsed.error.flatten().fieldErrors,
+    }
+  }
+
+  let tripId: string
+  try {
+    tripId = await createTrip({
+      actorId: user.userId,
+      ...parsed.data,
+    })
+  } catch (error) {
+    if (!(error instanceof CoreError)) {
+      const code =
+        typeof error === 'object' && error && 'code' in error
+          ? String(error.code)
+          : ''
+      console.error('Trip creation failed without exposing submitted locations.', {
+        code,
+      })
+    }
+    return {
+      message:
+        error instanceof CoreError
+          ? error.message
+          : '방을 만들지 못했습니다. 잠시 후 다시 시도해주세요.',
+    }
+  }
+
+  revalidatePath('/core')
+  revalidatePath('/home')
+  revalidatePath('/my-rooms')
+  redirect(
+    `/core?message=${encodeURIComponent('방을 만들었습니다.')}&trip=${tripId}`,
+  )
 }
 
 export async function applyAction(formData: FormData) {
@@ -76,6 +131,32 @@ export async function approveAction(formData: FormData) {
         idempotencyKey: text(formData, 'idempotencyKey'),
       }),
     '참여를 승인했습니다.',
+  )
+}
+
+export async function closeTripAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  await execute(
+    () =>
+      closeTrip(
+        user.userId,
+        text(formData, 'tripId'),
+        text(formData, 'idempotencyKey'),
+      ),
+    '모집을 종료했습니다.',
+  )
+}
+
+export async function cancelTripAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  await execute(
+    () =>
+      cancelTrip(
+        user.userId,
+        text(formData, 'tripId'),
+        text(formData, 'idempotencyKey'),
+      ),
+    '모집을 취소했습니다.',
   )
 }
 

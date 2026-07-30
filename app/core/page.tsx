@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Coins, Route, ShieldCheck, Users } from 'lucide-react'
+import { Coins, ShieldCheck, Users } from 'lucide-react'
 import { MobileShell } from '@/components/mobile-shell'
 import { Card } from '@/components/ui/card'
 import { requireCompleteUser } from '@/lib/auth/session'
@@ -7,8 +7,9 @@ import { getCoreDashboard } from '@/lib/core/service'
 import {
   applyAction,
   approveAction,
+  cancelTripAction,
+  closeTripAction,
   confirmFareAction,
-  createTripAction,
   depositAction,
   grantAction,
   settleAction,
@@ -74,19 +75,16 @@ export default async function CorePage({
         ) : null}
 
         <Card>
-          <h2 className="flex items-center gap-2 font-bold"><Route className="size-5" />새 모집</h2>
-          <p className="mt-1 text-xs text-muted-foreground">예상 요금은 지도 연동 전 결정적 입력값으로 사용합니다.</p>
-          <form action={createTripAction} className="mt-3 flex flex-col gap-3">
-            <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
-            <input name="origin" required maxLength={120} className="app-input" placeholder="출발지" />
-            <input name="destination" required maxLength={120} className="app-input" placeholder="도착지" />
-            <label className="text-sm font-semibold">출발 시각<input name="departureAt" type="datetime-local" required className="app-input mt-1" /></label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-sm font-semibold">최대 인원<select name="maxParticipants" className="app-input mt-1"><option>2</option><option>3</option><option>4</option></select></label>
-              <label className="text-sm font-semibold">예상 요금<input name="estimatedFare" type="number" min="1" max="1000000" required className="app-input mt-1" /></label>
-            </div>
-            <Submit>모집 만들기</Submit>
-          </form>
+          <h2 className="font-bold">새 모집</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            시간대와 중복 제출을 안전하게 처리하는 모집 생성 화면을 이용해주세요.
+          </p>
+          <Link
+            href="/create"
+            className="mt-3 block w-full rounded-xl bg-primary px-4 py-3 text-center text-sm font-bold"
+          >
+            동승 방 만들기
+          </Link>
         </Card>
 
         <section>
@@ -107,7 +105,14 @@ export default async function CorePage({
                     </div>
                     <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">{trip.status}</span>
                   </div>
-                  <p className="mt-3 text-sm">예상 총 요금 <strong>{trip.estimatedFare.toLocaleString()}P</strong></p>
+                  <p className="mt-3 text-sm">
+                    예상 총 요금{' '}
+                    <strong>
+                      {trip.estimatedFare === null
+                        ? '지도 연동 후 산정'
+                        : `${trip.estimatedFare.toLocaleString()}P`}
+                    </strong>
+                  </p>
 
                   {isHost && trip.status === 'OPEN' ? (
                     <div className="mt-3 flex flex-col gap-2">
@@ -120,12 +125,27 @@ export default async function CorePage({
                           <MiniSubmit>승인</MiniSubmit>
                         </form>
                       ))}
-                      <form action={depositAction}>
-                        <input type="hidden" name="tripId" value={trip.tripId} />
-                        <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
-                        <Submit>모집 확정 및 전원 예치</Submit>
-                      </form>
+                      <div className="grid grid-cols-2 gap-2">
+                        <form action={closeTripAction}>
+                          <input type="hidden" name="tripId" value={trip.tripId} />
+                          <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
+                          <MiniSubmit>모집 종료</MiniSubmit>
+                        </form>
+                        <form action={cancelTripAction}>
+                          <input type="hidden" name="tripId" value={trip.tripId} />
+                          <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
+                          <MiniSubmit>방 취소</MiniSubmit>
+                        </form>
+                      </div>
                     </div>
+                  ) : null}
+
+                  {isHost && trip.status === 'CLOSED' ? (
+                    <form action={depositAction} className="mt-3">
+                      <input type="hidden" name="tripId" value={trip.tripId} />
+                      <input type="hidden" name="idempotencyKey" value={crypto.randomUUID()} />
+                      <Submit>모집 확정 및 전원 예치</Submit>
+                    </form>
                   ) : null}
 
                   {!isHost && trip.status === 'OPEN' && !trip.currentUserStatus ? (

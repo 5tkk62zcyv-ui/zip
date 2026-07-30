@@ -18,6 +18,9 @@
 - `scripts/verify-db.mjs`는 0003 checksum·환경, 분쟁/추천 근거 테이블,
   정산 확인 기한, 포인트 원장 append-only 트리거를 확인한다.
 - 운영 DB 대상 강화 검증은 통과했다.
+- Sprint 2의 `0004_sprint2_trip_lifecycle`을 운영 DB에 transaction으로 적용했고,
+  checksum `b31bcf1edab8318f895d2c18e9383b8200969cd888d265a74776baecade91c5e`,
+  lifecycle·정원·방장 참가자·원장 불변성 검증이 통과했다.
 - 코드 품질 검증은 lint, TypeScript, 테스트 21건, production build가 통과했다.
 
 ## 남은 위험과 열린 결정

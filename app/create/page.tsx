@@ -1,238 +1,233 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
-import { useState } from 'react'
-import {
-  Calendar,
-  Info,
-  LocateFixed,
-  MapPin,
-  Flag,
-  Route,
-  Clock,
-  Coins,
-} from 'lucide-react'
+import { useActionState, useEffect, useMemo, useState } from 'react'
+import { Calendar, Flag, Info, MapPin, Users } from 'lucide-react'
 import { MobileShell } from '@/components/mobile-shell'
-import { TabBar } from '@/components/tab-bar'
+import { TopBar } from '@/components/top-bar'
 import { BottomBar, BigButton } from '@/components/bottom-bar'
-import { useApp } from '@/components/app-provider'
-import { formatPoints, formatWon } from '@/lib/mock-data'
-import { cn } from '@/lib/utils'
+import {
+  createRoomAction,
+  type CreateTripState,
+} from '@/app/core/actions'
 
-const ESTIMATED_FARE = 12000
+const initialState: CreateTripState = {}
 
 export default function CreateRoomPage() {
-  const router = useRouter()
-  const { toast } = useApp()
-  const [origin, setOrigin] = useState('전북대학교')
-  const [destination, setDestination] = useState('전주역')
-  const [departLabel, setDepartLabel] = useState('오늘 22:30')
-  const [maxSeats, setMaxSeats] = useState(3)
-  const [approval, setApproval] = useState<'auto' | 'host'>('auto')
-  const [allowNearby, setAllowNearby] = useState(true)
+  const [state, action, pending] = useActionState(
+    createRoomAction,
+    initialState,
+  )
+  const [idempotencyKey, setIdempotencyKey] = useState('')
+  const [departureLocal, setDepartureLocal] = useState('')
 
-  const perPerson = Math.round(ESTIMATED_FARE / maxSeats / 100) * 100
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setIdempotencyKey(crypto.randomUUID()),
+      0,
+    )
+    return () => window.clearTimeout(timer)
+  }, [])
 
-  function handleCreate() {
-    toast('동승 방이 만들어졌어요!', 'success')
-    router.push('/room/room-1')
-  }
+  const departureAt = useMemo(() => {
+    if (!departureLocal) return ''
+    const value = new Date(departureLocal)
+    return Number.isFinite(value.getTime()) ? value.toISOString() : ''
+  }, [departureLocal])
 
   return (
-    <MobileShell>
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 px-5 py-4 backdrop-blur">
-        <h1 className="text-lg font-extrabold">동승 방 만들기</h1>
-        <p className="text-sm text-muted-foreground">
-          같은 방향의 학생을 모집해보세요.
-        </p>
-      </header>
+    <MobileShell withTabBar={false}>
+      <TopBar
+        title="동승 방 만들기"
+        subtitle="출발 정보와 모집 인원을 입력해주세요"
+      />
 
-      <div className="flex flex-1 flex-col gap-6 px-5 py-6">
-        {/* 출발지 */}
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-bold">
-            <MapPin className="size-4 text-info" />
-            출발지
-          </label>
-          <div className="relative">
-            <input
-              value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
-              className="app-input pr-11"
-            />
-            <button
-              type="button"
-              aria-label="현재 위치 사용"
-              className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg bg-secondary text-secondary-foreground"
-            >
-              <LocateFixed className="size-4" />
-            </button>
-          </div>
-        </div>
+      <form action={action} className="flex flex-1 flex-col">
+        <input
+          type="hidden"
+          name="idempotencyKey"
+          value={idempotencyKey}
+        />
+        <input type="hidden" name="departureAt" value={departureAt} />
 
-        {/* 도착지 */}
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-bold">
-            <Flag className="size-4 text-warn" />
-            도착지
-          </label>
-          <input
-            value={destination}
-            onChange={(e) => setDestination(e.target.value)}
-            className="app-input"
-          />
-        </div>
-
-        {/* 출발 시간 */}
-        <div>
-          <label className="mb-2 flex items-center gap-1.5 text-sm font-bold">
-            <Calendar className="size-4 text-foreground" />
-            출발 시간
-          </label>
-          <div className="flex items-center gap-2">
-            {['오늘 21:50', '오늘 22:30', '오늘 23:10'].map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setDepartLabel(t)}
-                className={cn(
-                  'flex-1 rounded-xl border py-3 text-sm font-semibold transition-colors',
-                  departLabel === t
-                    ? 'border-primary bg-primary/15'
-                    : 'border-border bg-card text-muted-foreground',
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 최대 인원 */}
-        <div>
-          <label className="mb-2 block text-sm font-bold">최대 인원</label>
-          <div className="grid grid-cols-3 gap-2">
-            {[2, 3, 4].map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setMaxSeats(n)}
-                className={cn(
-                  'rounded-xl border py-3 text-sm font-bold transition-colors',
-                  maxSeats === n
-                    ? 'border-primary bg-primary/15'
-                    : 'border-border bg-card text-muted-foreground',
-                )}
-              >
-                {n}명
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            최소 2명이 모이면 출발할 수 있고, 최대 4명까지 함께 탈 수 있어요.
-          </p>
-        </div>
-
-        {/* 승인 방식 */}
-        <div>
-          <label className="mb-2 block text-sm font-bold">승인 방식</label>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { v: 'auto', label: '자동 승인' },
-              { v: 'host', label: '방장 승인' },
-            ].map((o) => (
-              <button
-                key={o.v}
-                type="button"
-                onClick={() => setApproval(o.v as 'auto' | 'host')}
-                className={cn(
-                  'rounded-xl border py-3 text-sm font-semibold transition-colors',
-                  approval === o.v
-                    ? 'border-primary bg-primary/15'
-                    : 'border-border bg-card text-muted-foreground',
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 인접 목적지 허용 토글 */}
-        <button
-          type="button"
-          onClick={() => setAllowNearby((v) => !v)}
-          className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3 text-left"
+        <fieldset
+          disabled={pending || !idempotencyKey}
+          className="flex flex-1 flex-col gap-6 px-5 py-6 pb-32 disabled:opacity-70"
         >
-          <div className="min-w-0">
-            <p className="text-sm font-bold">인접 목적지 동승 허용</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {destination} 근처로 가는 학생에게도 내 방을 추천해요.
+          <Field
+            id="origin"
+            label="출발지"
+            icon={MapPin}
+            iconClassName="text-info"
+            error={state.fieldErrors?.origin?.[0]}
+          >
+            <input
+              id="origin"
+              name="origin"
+              required
+              maxLength={120}
+              autoComplete="off"
+              placeholder="예: 전북대학교 정문"
+              aria-invalid={Boolean(state.fieldErrors?.origin)}
+              aria-describedby={
+                state.fieldErrors?.origin ? 'origin-error origin-help' : 'origin-help'
+              }
+              className="app-input"
+            />
+            <p
+              id="origin-help"
+              className="mt-2 text-xs leading-relaxed text-muted-foreground"
+            >
+              지도 검색은 다음 스프린트에서 연결됩니다. 지금은 알아보기 쉬운
+              장소명을 입력해주세요.
+            </p>
+          </Field>
+
+          <Field
+            id="destination"
+            label="도착지"
+            icon={Flag}
+            iconClassName="text-warn"
+            error={state.fieldErrors?.destination?.[0]}
+          >
+            <input
+              id="destination"
+              name="destination"
+              required
+              maxLength={120}
+              autoComplete="off"
+              placeholder="예: 전주역"
+              aria-invalid={Boolean(state.fieldErrors?.destination)}
+              aria-describedby={
+                state.fieldErrors?.destination ? 'destination-error' : undefined
+              }
+              className="app-input"
+            />
+          </Field>
+
+          <Field
+            id="departureLocal"
+            label="출발 시각"
+            icon={Calendar}
+            error={state.fieldErrors?.departureAt?.[0]}
+          >
+            <input
+              id="departureLocal"
+              type="datetime-local"
+              required
+              value={departureLocal}
+              onChange={(event) => setDepartureLocal(event.target.value)}
+              aria-invalid={Boolean(state.fieldErrors?.departureAt)}
+              aria-describedby={
+                state.fieldErrors?.departureAt
+                  ? 'departureLocal-error departure-help'
+                  : 'departure-help'
+              }
+              className="app-input"
+            />
+            <p
+              id="departure-help"
+              className="mt-2 text-xs leading-relaxed text-muted-foreground"
+            >
+              현재 이후의 시각을 선택해주세요.
+            </p>
+          </Field>
+
+          <fieldset>
+            <legend className="mb-2 flex items-center gap-1.5 text-sm font-bold">
+              <Users className="size-4" aria-hidden />
+              최대 인원
+            </legend>
+            <div className="grid grid-cols-3 gap-2">
+              {[2, 3, 4].map((count) => (
+                <label
+                  key={count}
+                  className="cursor-pointer rounded-xl border border-border bg-card py-3 text-center text-sm font-bold has-[:checked]:border-primary has-[:checked]:bg-primary/15 focus-within:ring-2 focus-within:ring-ring"
+                >
+                  <input
+                    type="radio"
+                    name="maxParticipants"
+                    value={count}
+                    defaultChecked={count === 3}
+                    required
+                    className="sr-only"
+                  />
+                  {count}명
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              방장을 포함해 2~4명까지 모집할 수 있어요.
+            </p>
+            {state.fieldErrors?.maxParticipants?.[0] ? (
+              <p className="mt-2 text-xs text-destructive" role="alert">
+                {state.fieldErrors.maxParticipants[0]}
+              </p>
+            ) : null}
+          </fieldset>
+
+          <div className="flex items-start gap-2 rounded-2xl border border-info/30 bg-info-soft px-4 py-3 text-sm">
+            <Info
+              className="mt-0.5 size-4 shrink-0 text-info"
+              aria-hidden
+            />
+            <p className="leading-relaxed">
+              예상 거리·시간·요금은 지도 API가 연결되는 다음 스프린트에서
+              산정합니다. 요금이 산정되기 전에는 모집 확정과 포인트 예치를
+              진행할 수 없어요.
             </p>
           </div>
-          <span
-            className={cn(
-              'relative h-7 w-12 shrink-0 rounded-full transition-colors',
-              allowNearby ? 'bg-primary' : 'bg-border',
-            )}
+
+          <p
+            aria-live="polite"
+            className="min-h-5 text-sm text-destructive"
           >
-            <span
-              className={cn(
-                'absolute top-1 size-5 rounded-full bg-card shadow transition-transform',
-                allowNearby ? 'translate-x-6' : 'translate-x-1',
-              )}
-            />
-          </span>
-        </button>
-
-        {/* 예상 요금 카드 */}
-        <div className="rounded-2xl border border-border bg-secondary/40 p-4">
-          <p className="mb-3 text-sm font-bold">예상 요금</p>
-          <div className="flex flex-col gap-2 text-sm">
-            <Row icon={Route} label="예상 거리" value="7.8km" />
-            <Row icon={Clock} label="예상 소요 시간" value="20분" />
-            <Row icon={Coins} label="예상 택시비" value={formatWon(ESTIMATED_FARE)} />
-          </div>
-          <div className="mt-3 flex items-center justify-between rounded-xl bg-card px-4 py-3">
-            <span className="text-sm font-semibold">
-              {maxSeats}명 기준 예상 분담금
-            </span>
-            <span className="text-lg font-extrabold text-foreground">
-              {formatPoints(perPerson)}
-            </span>
-          </div>
-          <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
-            <Info className="mt-0.5 size-3.5 shrink-0" />
-            예상 요금은 지도 API 기반 정보이며 실제 요금과 달라질 수 있어요.
+            {pending ? '방 정보를 안전하게 저장하고 있어요.' : state.message}
           </p>
-        </div>
-      </div>
+        </fieldset>
 
-      <BottomBar>
-        <BigButton onClick={handleCreate}>이 조건으로 방 만들기</BigButton>
-      </BottomBar>
-
-      <TabBar />
+        <BottomBar>
+          <BigButton type="submit" disabled={pending || !idempotencyKey}>
+            {pending ? '방 만드는 중…' : '이 조건으로 방 만들기'}
+          </BigButton>
+        </BottomBar>
+      </form>
     </MobileShell>
   )
 }
 
-function Row({
-  icon: Icon,
+function Field({
+  id,
   label,
-  value,
+  icon: Icon,
+  iconClassName,
+  error,
+  children,
 }: {
-  icon: React.ComponentType<{ className?: string }>
+  id: string
   label: string
-  value: string
+  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
+  iconClassName?: string
+  error?: string
+  children: React.ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-        <Icon className="size-4" />
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-2 flex items-center gap-1.5 text-sm font-bold"
+      >
+        <Icon
+          className={`size-4 ${iconClassName ?? 'text-foreground'}`}
+          aria-hidden
+        />
         {label}
-      </span>
-      <span className="font-semibold">{value}</span>
+      </label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} className="mt-2 text-xs text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
