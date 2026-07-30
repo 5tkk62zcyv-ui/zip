@@ -22,7 +22,8 @@ export type PlaceRecommendation = {
   approvedCount: number
   estimatedFare: number
   expectedSharePoints: number
-  estimatedSavingsPoints: number
+  estimatedSavingsPoints: number | null
+  fareIsFresh: boolean
   originDistanceMeters: number
   destinationDistanceMeters: number
   routeSimilarityPercent: number
@@ -44,6 +45,7 @@ type CandidateRow = {
   approvedCount: number
   estimatedFare: number
   routeDistanceMeters: number
+  fareExpiresAt: string
 }
 
 export async function searchOpenTripRecommendations(input: {
@@ -69,14 +71,14 @@ export async function searchOpenTripRecommendations(input: {
       g.max_participants AS "maxParticipants",
       confirmed.count AS "approvedCount",
       f.deposit_points_total AS "estimatedFare",
-      f.route_distance_m AS "routeDistanceMeters"
+      f.route_distance_m AS "routeDistanceMeters",
+      f.expires_at AS "fareExpiresAt"
     FROM trip_groups g
     JOIN users host ON host.user_id = g.host_user_id
     JOIN fare_estimates f
       ON f.trip_id = g.trip_id
      AND f.fare_estimate_id = g.current_fare_estimate_id
      AND f.trip_location_revision = g.location_revision
-     AND f.expires_at > now()
     CROSS JOIN LATERAL (
       SELECT count(*)::int AS count
       FROM trip_participants p
@@ -138,6 +140,7 @@ export async function searchOpenTripRecommendations(input: {
       })
       const maxParticipants = Number(row.maxParticipants)
       const estimatedFare = Number(row.estimatedFare)
+      const fareIsFresh = Date.parse(row.fareExpiresAt) > Date.now()
       const expectedSharePoints = Math.ceil(
         estimatedFare / maxParticipants,
       )
@@ -157,10 +160,10 @@ export async function searchOpenTripRecommendations(input: {
           approvedCount: Number(row.approvedCount),
           estimatedFare,
           expectedSharePoints,
-          estimatedSavingsPoints: Math.max(
-            0,
-            estimatedFare - expectedSharePoints,
-          ),
+          estimatedSavingsPoints: fareIsFresh
+            ? Math.max(0, estimatedFare - expectedSharePoints)
+            : null,
+          fareIsFresh,
           originDistanceMeters,
           destinationDistanceMeters,
           routeSimilarityPercent,

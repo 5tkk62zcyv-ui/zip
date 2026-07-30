@@ -2,7 +2,15 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { ArrowRight, Clock, MapPin, Search, Sparkles, Users } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  Clock,
+  MapPin,
+  Search,
+  Sparkles,
+  Users,
+} from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
 import { formatDeparture, maskName } from '@/components/database-room-card'
@@ -93,6 +101,13 @@ export function PlaceRecommendationSearch() {
             setMessage('')
           }}
         />
+        {!origin || !destination ? (
+          <p className="rounded-xl bg-primary/10 p-3 text-sm" role="status">
+            검색 후 표시되는 결과에서 출발지와 목적지를 각각 선택해 주세요.
+            두 장소가 모두 <strong>선택됨</strong> 상태가 되면 추천이 자동으로
+            시작됩니다.
+          </p>
+        ) : null}
         {loading ? (
           <p className="rounded-xl bg-muted p-3 text-sm" role="status">
             거리와 경로 유사도를 계산하는 중...
@@ -204,26 +219,37 @@ function PlacePicker({
         </button>
       </div>
       {results.length ? (
-        <ul className="mt-2 rounded-xl border bg-card p-1">
+        <div className="mt-2 rounded-xl border bg-card p-2">
+          <p className="px-2 pb-2 text-xs font-semibold text-muted-foreground">
+            검색 결과 · 사용할 장소를 선택하세요
+          </p>
+          <ul>
           {results.map((place) => (
             <li key={`${place.provider}:${place.providerPlaceId}`}>
               <button
                 type="button"
-                className="min-h-11 w-full rounded-lg px-3 py-2 text-left hover:bg-muted"
+                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-muted"
                 onClick={() => {
                   onChange(place)
                   setQuery(place.label)
                   setResults([])
                 }}
               >
-                {place.label}
+                <span>{place.label}</span>
+                <span className="shrink-0 text-xs font-semibold text-primary">
+                  이 장소 선택
+                </span>
               </button>
             </li>
           ))}
-        </ul>
+          </ul>
+        </div>
       ) : null}
       {value ? (
-        <p className="mt-1 text-xs text-mint">선택됨: {value.label}</p>
+        <p className="mt-2 flex items-center gap-1 text-xs font-semibold text-mint">
+          <Check className="size-3.5" aria-hidden />
+          선택됨: {value.label}
+        </p>
       ) : null}
       {error ? (
         <p className="mt-1 text-xs text-destructive" role="alert">
@@ -268,8 +294,14 @@ function RecommendationResult({ item }: { item: PlaceRecommendation }) {
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">예상 절감</dt>
-          <dd className="mt-1 font-extrabold text-mint">
-            {item.estimatedSavingsPoints.toLocaleString('ko-KR')}P
+          <dd
+            className={`mt-1 font-extrabold ${
+              item.fareIsFresh ? 'text-mint' : 'text-muted-foreground'
+            }`}
+          >
+            {item.estimatedSavingsPoints === null
+              ? '요금 재산정 필요'
+              : `${item.estimatedSavingsPoints.toLocaleString('ko-KR')}P`}
           </dd>
         </div>
         <div>
