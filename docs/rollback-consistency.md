@@ -21,6 +21,14 @@
 - Sprint 2의 `0004_sprint2_trip_lifecycle`을 운영 DB에 transaction으로 적용했고,
   checksum `b31bcf1edab8318f895d2c18e9383b8200969cd888d265a74776baecade91c5e`,
   lifecycle·정원·방장 참가자·원장 불변성 검증이 통과했다.
+- Sprint 3의 `0005_provider_neutral_fare_evidence`를 운영 DB에 transaction으로
+  적용했고, checksum
+  `849ff840567bc32e0f1c17a71bf4777ebb484017da667c788d802b8a5a753069`,
+  장소 좌표·활성 FareEstimate·기존 원장 검증이 통과했다.
+- `0006_require_fare_evidence_for_confirmation`을 운영 DB에 transaction으로
+  적용했고, checksum
+  `b13770ab19a1a2b577bdd89942cfb898fe97d15b5651fc770e614397c7b62bfa`,
+  보호 트리거와 기존 CONFIRMED 근거 검증이 통과했다.
 - 코드 품질 검증은 lint, TypeScript, 테스트 21건, production build가 통과했다.
 
 ## 남은 위험과 열린 결정

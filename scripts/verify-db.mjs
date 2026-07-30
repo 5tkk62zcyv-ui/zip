@@ -16,6 +16,18 @@ const domainMigrationChecksum = createHash('sha256')
 const lifecycleMigrationChecksum = createHash('sha256')
   .update(await readFile('db/migrations/0004_sprint2_trip_lifecycle.sql'))
   .digest('hex')
+const fareEvidenceMigrationChecksum = createHash('sha256')
+  .update(
+    await readFile('db/migrations/0005_provider_neutral_fare_evidence.sql'),
+  )
+  .digest('hex')
+const confirmationGuardMigrationChecksum = createHash('sha256')
+  .update(
+    await readFile(
+      'db/migrations/0006_require_fare_evidence_for_confirmation.sql',
+    ),
+  )
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -74,6 +86,20 @@ try {
           AND checksum = $4
           AND environment = $1
       ) AS lifecycle_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0005_provider_neutral_fare_evidence'
+          AND checksum = $5
+          AND environment = $1
+      ) AS fare_evidence_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0006_require_fare_evidence_for_confirmation'
+          AND checksum = $6
+          AND environment = $1
+      ) AS confirmation_guard_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -185,12 +211,57 @@ try {
          AND p.role = 'HOST'
          AND p.user_id = g.host_user_id
         WHERE p.user_id IS NULL
-      ) AS trip_hosts_valid
+      ) AS trip_hosts_valid,
+      to_regclass('public.fare_estimates') IS NOT NULL
+        AS fare_estimates_exists,
+      (
+        SELECT count(*) = 0
+        FROM fare_estimates
+        WHERE route_distance_m < 0
+           OR duration_seconds < 0
+           OR estimated_fare_won NOT BETWEEN 1 AND 1000000
+           OR deposit_points_total NOT BETWEEN 1 AND 1000000
+           OR expires_at <= calculated_at
+           OR jsonb_typeof(calculation_basis) <> 'object'
+           OR calculation_basis = '{}'::jsonb
+      ) AS fare_estimates_valid,
+      (
+        SELECT count(*) = 0
+        FROM trip_groups g
+        JOIN fare_estimates f
+          ON f.fare_estimate_id = g.current_fare_estimate_id
+        WHERE f.trip_id <> g.trip_id
+           OR f.trip_location_revision <> g.location_revision
+           OR f.deposit_points_total IS DISTINCT FROM g.estimated_fare
+      ) AS active_fare_estimates_valid,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'trip_groups'::regclass
+          AND tgname = 'trip_groups_require_fare_evidence'
+          AND NOT tgisinternal
+      ) AS confirmation_guard_exists,
+      (
+        SELECT count(*) = 0
+        FROM trip_groups g
+        LEFT JOIN fare_estimates f
+          ON f.trip_id = g.trip_id
+         AND f.fare_estimate_id = g.current_fare_estimate_id
+        WHERE g.status = 'CONFIRMED'
+          AND (
+            f.fare_estimate_id IS NULL
+            OR f.trip_location_revision <> g.location_revision
+            OR f.deposit_points_total IS DISTINCT FROM g.estimated_fare
+            OR f.expires_at <= now()
+          )
+      ) AS confirmed_fare_evidence_valid
   `, [
     expectedEnvironment,
     expectedFingerprint,
     domainMigrationChecksum,
     lifecycleMigrationChecksum,
+    fareEvidenceMigrationChecksum,
+    confirmationGuardMigrationChecksum,
   ])
 
   const verification = result.rows[0]

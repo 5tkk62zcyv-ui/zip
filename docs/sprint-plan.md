@@ -124,18 +124,18 @@
 
 목표: 제공자에 종속되지 않는 장소·경로·거리·시간·요금 계산 계층을 구축한다.
 
-- [ ] 장소 검색, 좌표, 경로, 요금 추정의 제공자 중립 인터페이스를 정의한다. `TR-08`
-- [ ] 선택된 지도 제공자 어댑터와 서버 전용 비밀값 구성을 구현한다. `FR-10`, `FR-11`, `FR-14`
-- [ ] 좌표계, m/km, 초/분, 금액, 반올림, 산정 시각, 오류 형식을 정규화한다.
-- [ ] FareEstimate 저장 및 산정 근거 추적을 구현한다. `FR-14`, `FR-32`
-- [ ] 목표 인원 기준 예상 선결제액 `ceil(E/N)` 표시를 구현한다. `FR-15`
-- [ ] 타임아웃, 제한, 캐시 만료, 경로 없음, 제공자 장애 UI를 구현한다.
+- [x] 장소 검색, 좌표, 경로, 요금 추정의 제공자 중립 인터페이스를 정의한다. `TR-08`
+- [!] 선택된 지도 제공자 어댑터와 서버 전용 비밀값 구성을 구현한다. `FR-10`, `FR-11`, `FR-14` — DEC-003 제공자·상품·요금 정책 결정 필요
+- [x] 좌표계, m/km, 초/분, 금액, 반올림, 산정 시각, 오류 형식을 정규화한다.
+- [~] FareEstimate 저장 및 산정 근거 추적을 구현한다. `FR-14`, `FR-32` — 0005 영속 모델·활성 근거 검증 구현, 실제 provider write 경로는 DEC-003 대기
+- [~] 목표 인원 기준 예상 선결제액 `ceil(E/N)` 표시를 구현한다. `FR-15` — 결정적 계산·경계 테스트 완료, 실제 요금 UI는 provider 대기
+- [~] 타임아웃, 제한, 캐시 만료, 경로 없음, 제공자 장애 UI를 구현한다. — typed error·stale 거부 구현, 실제 adapter UI 대기
 
 경계·실패 검증:
 
-- [ ] 동일 지점, 경로 없음, 시간 초과, 잘못된 좌표
-- [ ] 2명/4명 분담 및 나머지 포인트 처리
-- [ ] 제공자 응답이 목적지·거리·시간·요금의 유일한 근거임
+- [~] 동일 지점, 경로 없음, 시간 초과, 잘못된 좌표 — 0m/0초와 잘못된 좌표 단위 테스트, 실제 adapter 오류 테스트 대기
+- [x] 2명/4명 분담 및 나머지 포인트 처리 — `ceil` 경계 단위 테스트
+- [~] 제공자 응답이 목적지·거리·시간·요금의 유일한 근거임 — evidence FK·활성/만료 검증 구현, 실제 adapter 통합 대기
 
 ### Sprint 4 — 참여 신청, 승인, 확정
 
@@ -290,7 +290,7 @@
 | TR-05 추천 추적성 | 5 | 미착수 |  |
 | TR-06 환경 분리·비밀값 | 0, 1, 10 | 진행 | Vercel Development/Neon 연결·fingerprint/역할 가드 완료, Preview·Production 검증 대기 |
 | TR-07 백업·복구·모니터링 | 0, 1, 10 | 차단 | DEC-001·002와 실제 Neon 운영 정책 결정 필요 |
-| TR-08 지도 제공자 추상화 | 3 | 미착수 |  |
+| TR-08 지도 제공자 추상화 | 3 | 진행 | Place/Route/Fare 포트와 정규화·오류 계약 구현. 실제 adapter는 DEC-003 대기 |
 
 ## 5. 공통 Definition of Ready
 
@@ -374,6 +374,18 @@
 - 검증: ESLint·TypeScript·Vitest 39개·Next.js build 통과. 운영 Neon 사전검사, 0004 transaction 적용, checksum·환경·lifecycle·정원·방장·원장 verify 통과
 - 회고/다음 조치: Preview 또는 별도 Development Neon에서 수동/자동 종료·승인 경쟁과 멱등 재시도를 통합 검증한다.
 
+### Sprint 3 — 2026-07-30 ~ 진행 중
+
+- 상태: 진행(DEC-003 차단)
+- 목표: 제공자 교체 가능한 장소·경로·요금 계약과 추적 가능한 FareEstimate 기반 구축
+- 담당: Codex; 검토 `map_recommendation_reviewer`, `neon_database_reliability_reviewer`
+- 대상 요구사항: `FR-10~15`, `FR-32`, `TR-08`; Sprint 5 선행 보호 `TR-04~05`
+- 완료: Place/Route/Fare 포트 분리, WGS84·m·초·정수 금액·UTC 정규화, typed error·stale 거부, `ceil(E/N)` 계산, 장소 좌표·revision·FareEstimate evidence 0005 적용, 예치 전 활성 근거·만료·금액 검증, 구버전 앱도 근거 없는 CONFIRMED 전이를 못 하도록 DB 0006 guard 적용
+- 이월: 네이버/카카오 adapter, 장소 검색·현재 위치 UI, 실제 경로·요금 산정, provider 오류 UI
+- 차단: DEC-003 제공자·API 상품·요금/할증·원화-포인트·TTL/fallback 결정 미완료
+- 검증: 운영 Neon 0005·0006 사전검사·transaction 적용·checksum/장소/FareEstimate/CONFIRMED guard/원장 verify 통과. ESLint·TypeScript·Vitest 56개·Next.js build 통과
+- 회고/다음 조치: DEC-003 결정 후 선택 adapter 하나를 구현하고 같은 contract fixture로 교체 가능성을 검증한다.
+
 ### Sprint 1 — 2026-07-29 ~ 진행 중
 
 - 상태: 진행
@@ -395,3 +407,5 @@
 | 2026-07-30 | Sprint 0 기준선, 상태 전이, 품질 게이트와 정책 차단 항목 정리 | Codex |
 | 2026-07-30 | Sprint 2 실제 방 생성과 모집 종료·취소 구현 진행 상태 반영 | Codex |
 | 2026-07-30 | 운영 Neon 0004 적용 및 lifecycle·정원·방장 불변식 검증 반영 | Codex |
+| 2026-07-30 | Sprint 3 제공자 중립 지도·요금 계약과 운영 Neon 0005 근거 모델 반영 | Codex |
+| 2026-07-30 | 구버전 배포 구간의 근거 없는 예치를 차단하는 운영 Neon 0006 guard 반영 | Codex |

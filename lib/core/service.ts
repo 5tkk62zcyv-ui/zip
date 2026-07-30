@@ -487,17 +487,44 @@ export async function confirmTripAndDeposit(
 ) {
   await inTransaction(async (client) => {
     const trip = await client.query(
-      `SELECT host_user_id, status, estimated_fare, max_participants,
-              confirmation_idempotency_key
-       FROM trip_groups WHERE trip_id = $1 FOR UPDATE`,
+      `SELECT
+         g.host_user_id,
+         g.status,
+         g.estimated_fare,
+         g.max_participants,
+         g.confirmation_idempotency_key,
+         g.current_fare_estimate_id,
+         g.location_revision,
+         f.trip_location_revision AS estimate_location_revision,
+         f.deposit_points_total,
+         f.expires_at AS estimate_expires_at
+       FROM trip_groups g
+       LEFT JOIN fare_estimates f
+         ON f.trip_id = g.trip_id
+        AND f.fare_estimate_id = g.current_fare_estimate_id
+       WHERE g.trip_id = $1
+       FOR UPDATE OF g`,
       [tripId],
     )
     const row = trip.rows[0]
     if (!row || row.host_user_id !== actorId) throw new CoreError('방장만 모집을 확정할 수 있습니다.')
     if (row.status === 'CONFIRMED' && row.confirmation_idempotency_key === idempotencyKey) return
     if (row.status !== 'CLOSED') throw new CoreError('종료된 모집만 확정할 수 있습니다.')
-    if (row.estimated_fare === null) {
+    if (
+      row.current_fare_estimate_id === null ||
+      row.estimated_fare === null ||
+      row.deposit_points_total === null
+    ) {
       throw new CoreError('지도 기반 예상 요금 산정 후 모집을 확정할 수 있습니다.')
+    }
+    if (
+      row.location_revision !== row.estimate_location_revision ||
+      Number(row.estimated_fare) !== Number(row.deposit_points_total)
+    ) {
+      throw new CoreError('장소 또는 예상 요금이 변경되었습니다. 요금을 다시 산정해주세요.')
+    }
+    if (new Date(row.estimate_expires_at) <= new Date()) {
+      throw new CoreError('예상 요금이 만료되었습니다. 요금을 다시 산정해주세요.')
     }
 
     const participants = await client.query(
