@@ -367,16 +367,25 @@ export async function getPointDashboard(userId: string) {
   }
 }
 
-export async function getAdminPointDashboard() {
+export async function getAdminPointDashboard(actorId: string) {
   await ensureDatabaseIdentity()
   const sql = getDatabase()
+  const actorRows = await sql`
+    SELECT 1
+    FROM users
+    WHERE user_id = ${actorId}
+      AND role = 'ADMIN'
+      AND account_status = 'ACTIVE'
+  `
+  if (!actorRows.length) {
+    throw new CoreError('활성 관리자만 관리자 정보를 조회할 수 있습니다.')
+  }
   const [users, grants, pendingRequests, totals] = await Promise.all([
     sql`
       SELECT
         user_id AS "userId",
         name,
-        student_id AS "studentId",
-        school_email AS "schoolEmail"
+        student_id AS "studentId"
       FROM users
       WHERE account_status = 'ACTIVE'
         AND role = 'USER'
@@ -407,8 +416,7 @@ export async function getAdminPointDashboard() {
         r.requested_at AS "requestedAt",
         u.user_id AS "userId",
         u.name,
-        u.student_id AS "studentId",
-        u.school_email AS "schoolEmail"
+        u.student_id AS "studentId"
       FROM point_grant_requests r
       JOIN users u ON u.user_id = r.requester_user_id
       WHERE r.status = 'PENDING'
@@ -427,7 +435,6 @@ export async function getAdminPointDashboard() {
       userId: string
       name: string
       studentId: string
-      schoolEmail: string
     }>,
     grants: grants as unknown as Array<{
       ledgerId: string
@@ -446,7 +453,6 @@ export async function getAdminPointDashboard() {
       userId: string
       name: string
       studentId: string
-      schoolEmail: string
     }>,
     totalGranted: Number(
       (totals[0] as { totalGranted?: string } | undefined)?.totalGranted ?? 0,
@@ -1195,8 +1201,13 @@ export async function grantPoints(input: {
     if (admin?.role !== 'ADMIN' || admin.account_status !== 'ACTIVE') {
       throw new CoreError('활성 관리자만 포인트를 지급할 수 있습니다.')
     }
-    if (!target || target.account_status !== 'ACTIVE') {
-      throw new CoreError('활성 사용자에게만 포인트를 지급할 수 있습니다.')
+    if (
+      !target ||
+      target.account_status !== 'ACTIVE' ||
+      target.role !== 'USER' ||
+      target.user_id === input.adminId
+    ) {
+      throw new CoreError('활성 일반 사용자에게만 포인트를 지급할 수 있습니다.')
     }
 
     const ledgerKey = `grant:${input.adminId}:${input.idempotencyKey}`
@@ -1271,6 +1282,7 @@ export async function requestPoints(input: {
        FROM users
        WHERE user_id = $1
          AND account_status = 'ACTIVE'
+         AND role = 'USER'
          AND nullif(btrim(student_id), '') IS NOT NULL
          AND nullif(btrim(name), '') IS NOT NULL
          AND nullif(btrim(school_email), '') IS NOT NULL
@@ -1358,8 +1370,13 @@ export async function fulfillPointRequest(input: {
     if (admin?.role !== 'ADMIN' || admin.account_status !== 'ACTIVE') {
       throw new CoreError('활성 관리자만 포인트 요청을 처리할 수 있습니다.')
     }
-    if (!target || target.account_status !== 'ACTIVE') {
-      throw new CoreError('활성 사용자에게만 포인트를 지급할 수 있습니다.')
+    if (
+      !target ||
+      target.account_status !== 'ACTIVE' ||
+      target.role !== 'USER' ||
+      target.user_id === input.adminId
+    ) {
+      throw new CoreError('활성 일반 사용자의 요청만 처리할 수 있습니다.')
     }
 
     const ledger = await client.query(

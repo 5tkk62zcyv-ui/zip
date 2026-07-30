@@ -9,6 +9,7 @@ import {
   setSessionCookie,
 } from '@/lib/auth/session'
 import { parseLoginForm } from '@/lib/auth/validation'
+import { isDemoAdminLoginAllowed } from '@/lib/auth/demo-admin'
 
 export type LoginState = {
   message?: string
@@ -30,6 +31,13 @@ export async function loginAction(
   const token = createLoginSessionToken()
   const tokenHash = hashSessionToken(token)
   const expiresAt = getSessionExpiry()
+  let authenticatedRole: 'USER' | 'ADMIN' = 'USER'
+  const demoAdminAllowed = isDemoAdminLoginAllowed({
+    studentId: parsed.data.studentId,
+    name: parsed.data.name,
+    nodeEnv: process.env.NODE_ENV,
+    enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
+  })
 
   try {
     await ensureDatabaseIdentity()
@@ -41,16 +49,26 @@ export async function loginAction(
        WHERE student_id = ${parsed.data.studentId}
          AND name = ${parsed.data.name}
          AND account_status = 'ACTIVE'
-         AND role = 'USER'
-      RETURNING session_id
+         AND (
+           role = 'USER'
+           OR (
+             role = 'ADMIN'
+             AND ${demoAdminAllowed}
+             AND student_id = '123456789'
+             AND name = '택시타쉐어관리자'
+           )
+         )
+      RETURNING session_id,
+        (SELECT role FROM users WHERE user_id = auth_sessions.user_id) AS role
     `
     if (rows.length !== 1) {
       return { message: '학번 또는 이름이 일치하지 않습니다.' }
     }
+    authenticatedRole = rows[0].role === 'ADMIN' ? 'ADMIN' : 'USER'
   } catch {
     return { message: '로그인 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.' }
   }
 
   await setSessionCookie(token, expiresAt)
-  redirect('/home')
+  redirect(authenticatedRole === 'ADMIN' ? '/admin' : '/home')
 }
