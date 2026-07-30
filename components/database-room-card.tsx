@@ -3,6 +3,7 @@ import { ArrowRight, Clock, Users } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
 import { RoomRouteEstimate } from '@/components/room-route-estimate'
+import { RouteMap } from '@/components/route-map'
 
 export type DatabaseRoomSummary = {
   tripId: string
@@ -117,17 +118,30 @@ export function DatabaseRoomCard({
       room.originLongitude !== null &&
       room.destinationLatitude !== null &&
       room.destinationLongitude !== null ? (
-        <RoomRouteEstimate
-          origin={{
-            latitude: room.originLatitude,
-            longitude: room.originLongitude,
-          }}
-          destination={{
-            latitude: room.destinationLatitude,
-            longitude: room.destinationLongitude,
-          }}
-          maxParticipants={room.maxParticipants}
-        />
+        <>
+          <RouteMap
+            origin={{
+              latitude: room.originLatitude,
+              longitude: room.originLongitude,
+            }}
+            destination={{
+              latitude: room.destinationLatitude,
+              longitude: room.destinationLongitude,
+            }}
+            className="min-h-48"
+          />
+          <RoomRouteEstimate
+            origin={{
+              latitude: room.originLatitude,
+              longitude: room.originLongitude,
+            }}
+            destination={{
+              latitude: room.destinationLatitude,
+              longitude: room.destinationLongitude,
+            }}
+            maxParticipants={room.maxParticipants}
+          />
+        </>
       ) : (
         <p className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">
           이 방에는 지도 좌표가 저장되어 있지 않습니다.

@@ -117,7 +117,7 @@ export default async function HomePage({
                 }
               />
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                인접 목적지 추천은 카카오 경로 API 연결 후 제공합니다.
+                인접 목적지 추천은 허용 반경과 우회 정책 확정 후 제공합니다.
               </p>
             </div>
           )}
