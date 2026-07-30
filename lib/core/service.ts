@@ -405,8 +405,11 @@ export async function submitActualFare(input: {
     await client.query(
       `INSERT INTO trip_settlements (
          trip_id, actual_fare, participant_count, final_share, submitted_by,
-         fare_submission_idempotency_key
-       ) VALUES ($1, $2, $3, ceil($2::numeric / $3)::integer, $4, $5)`,
+         fare_submission_idempotency_key, confirmation_deadline
+       ) VALUES (
+         $1, $2, $3, ceil($2::numeric / $3)::integer,
+         $4, $5, now() + interval '24 hours'
+       )`,
       [input.tripId, input.actualFare, participantCount, input.actorId, input.idempotencyKey],
     )
     await client.query(

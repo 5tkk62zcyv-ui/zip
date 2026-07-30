@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { Pool } from '@neondatabase/serverless'
 
 const databaseUrl =
@@ -8,6 +10,9 @@ const expectedEnvironment = process.env.APP_ENVIRONMENT
 const expectedRole =
   process.env.DATABASE_EXPECTED_MIGRATION_ROLE ??
   process.env.DATABASE_EXPECTED_RUNTIME_ROLE
+const domainMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0003_mvp_domain_completion.sql'))
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -49,6 +54,16 @@ try {
       to_regclass('public.trip_settlements') IS NOT NULL AS settlements_exists,
       to_regclass('public.point_accounts') IS NOT NULL AS point_accounts_exists,
       to_regclass('public.point_ledger') IS NOT NULL AS point_ledger_exists,
+      to_regclass('public.fare_disputes') IS NOT NULL AS fare_disputes_exists,
+      to_regclass('public.trip_recommendation_evidence') IS NOT NULL
+        AS recommendation_evidence_exists,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0003_mvp_domain_completion'
+          AND checksum = $3
+          AND environment = $1
+      ) AS domain_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -97,8 +112,21 @@ try {
         ) l ON l.user_id = a.user_id
         WHERE a.available_points <> COALESCE(l.available_points, 0)
            OR a.held_points <> COALESCE(l.held_points, 0)
-      ) AS ledger_balances_match
-  `, [expectedEnvironment, expectedFingerprint])
+      ) AS ledger_balances_match,
+      (
+        SELECT count(*) = 0
+        FROM trip_settlements
+        WHERE confirmation_deadline IS NULL
+           OR confirmation_deadline <= submitted_at
+      ) AS settlement_deadlines_valid,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'point_ledger'::regclass
+          AND tgname = 'point_ledger_prevent_mutation'
+          AND NOT tgisinternal
+      ) AS ledger_append_only
+  `, [expectedEnvironment, expectedFingerprint, domainMigrationChecksum])
 
   const verification = result.rows[0]
   const failedChecks = Object.entries(verification ?? {})
