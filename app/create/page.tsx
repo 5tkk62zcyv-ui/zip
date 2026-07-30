@@ -1,24 +1,27 @@
 'use client'
 
 import { useActionState, useEffect, useMemo, useState } from 'react'
-import { Calendar, Flag, Info, MapPin, Users } from 'lucide-react'
+import { Calendar, Flag, MapPin, Search, Users } from 'lucide-react'
+import { createRoomAction, type CreateTripState } from '@/app/core/actions'
+import { BigButton, BottomBar } from '@/components/bottom-bar'
 import { MobileShell } from '@/components/mobile-shell'
+import { RouteMap } from '@/components/route-map'
 import { TopBar } from '@/components/top-bar'
-import { BottomBar, BigButton } from '@/components/bottom-bar'
-import {
-  createRoomAction,
-  type CreateTripState,
-} from '@/app/core/actions'
+import type { RouteEstimate, SelectablePlaceResult } from '@/lib/routing/types'
 
 const initialState: CreateTripState = {}
 
 export default function CreateRoomPage() {
-  const [state, action, pending] = useActionState(
-    createRoomAction,
-    initialState,
-  )
+  const [state, action, pending] = useActionState(createRoomAction, initialState)
   const [idempotencyKey, setIdempotencyKey] = useState('')
   const [departureLocal, setDepartureLocal] = useState('')
+  const [origin, setOrigin] = useState<SelectablePlaceResult | null>(null)
+  const [destination, setDestination] = useState<SelectablePlaceResult | null>(null)
+  const [estimate, setEstimate] = useState<RouteEstimate | null>(null)
+  const [estimateError, setEstimateError] = useState('')
+  const [estimating, setEstimating] = useState(false)
+  const [estimateRetry, setEstimateRetry] = useState(0)
+  const [maxParticipants, setMaxParticipants] = useState(3)
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -28,166 +31,92 @@ export default function CreateRoomPage() {
     return () => window.clearTimeout(timer)
   }, [])
 
+  useEffect(() => {
+    if (!origin || !destination) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      setEstimating(true)
+      setEstimate(null)
+      setEstimateError('')
+      fetch('/api/route-estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origin, destination }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const body = (await response.json()) as {
+            estimate?: RouteEstimate
+            error?: string
+          }
+          if (!response.ok || !body.estimate) {
+            throw new Error(body.error || '경로를 조회하지 못했습니다.')
+          }
+          setEstimate(body.estimate)
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') return
+          setEstimateError(
+            error instanceof Error ? error.message : '경로를 조회하지 못했습니다.',
+          )
+        })
+        .finally(() => setEstimating(false))
+    }, 0)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [destination, estimateRetry, origin])
+
   const departureAt = useMemo(() => {
     if (!departureLocal) return ''
     const value = new Date(departureLocal)
     return Number.isFinite(value.getTime()) ? value.toISOString() : ''
   }, [departureLocal])
+  const canCreate = Boolean(
+    idempotencyKey && origin && destination && estimate?.estimatedFareWon,
+  )
 
   return (
     <MobileShell withTabBar={false}>
-      <TopBar
-        title="동승 방 만들기"
-        subtitle="출발 정보와 모집 인원을 입력해주세요"
-      />
-
+      <TopBar title="동승 방 만들기" subtitle="장소와 출발 조건을 입력해 주세요" />
       <form action={action} className="flex flex-1 flex-col">
-        <input
-          type="hidden"
-          name="idempotencyKey"
-          value={idempotencyKey}
-        />
+        <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
         <input type="hidden" name="departureAt" value={departureAt} />
+        <PlaceInputs prefix="origin" place={origin} />
+        <PlaceInputs prefix="destination" place={destination} />
 
-        <fieldset
-          disabled={pending || !idempotencyKey}
-          className="flex flex-1 flex-col gap-6 px-5 py-6 pb-32 disabled:opacity-70"
-        >
-          <Field
-            id="origin"
-            label="출발지"
-            icon={MapPin}
-            iconClassName="text-info"
-            error={state.fieldErrors?.origin?.[0]}
-          >
-            <input
-              id="origin"
-              name="origin"
-              required
-              maxLength={120}
-              autoComplete="off"
-              placeholder="예: 전북대학교 정문"
-              aria-invalid={Boolean(state.fieldErrors?.origin)}
-              aria-describedby={
-                state.fieldErrors?.origin ? 'origin-error origin-help' : 'origin-help'
-              }
-              className="app-input"
-            />
-            <p
-              id="origin-help"
-              className="mt-2 text-xs leading-relaxed text-muted-foreground"
-            >
-              지도 검색은 다음 스프린트에서 연결됩니다. 지금은 알아보기 쉬운
-              장소명을 입력해주세요.
-            </p>
-          </Field>
+        <fieldset disabled={pending} className="flex flex-1 flex-col gap-5 px-5 py-5 pb-32 disabled:opacity-70">
+          <PlaceSearch label="출발지" icon={MapPin} selected={origin} onSelect={(place) => { setOrigin(place); setEstimate(null) }} error={state.fieldErrors?.origin?.[0]} />
+          <PlaceSearch label="목적지" icon={Flag} selected={destination} onSelect={(place) => { setDestination(place); setEstimate(null) }} error={state.fieldErrors?.destination?.[0]} />
 
-          <Field
-            id="destination"
-            label="도착지"
-            icon={Flag}
-            iconClassName="text-warn"
-            error={state.fieldErrors?.destination?.[0]}
-          >
-            <input
-              id="destination"
-              name="destination"
-              required
-              maxLength={120}
-              autoComplete="off"
-              placeholder="예: 전주역"
-              aria-invalid={Boolean(state.fieldErrors?.destination)}
-              aria-describedby={
-                state.fieldErrors?.destination ? 'destination-error' : undefined
-              }
-              className="app-input"
-            />
-          </Field>
+          <RouteMap origin={origin} destination={destination} />
+          <RouteSummary estimate={estimate} loading={estimating} error={estimateError} participants={maxParticipants} onRetry={() => setEstimateRetry((value) => value + 1)} />
 
-          <Field
-            id="departureLocal"
-            label="출발 시각"
-            icon={Calendar}
-            error={state.fieldErrors?.departureAt?.[0]}
-          >
-            <input
-              id="departureLocal"
-              type="datetime-local"
-              required
-              value={departureLocal}
-              onChange={(event) => setDepartureLocal(event.target.value)}
-              aria-invalid={Boolean(state.fieldErrors?.departureAt)}
-              aria-describedby={
-                state.fieldErrors?.departureAt
-                  ? 'departureLocal-error departure-help'
-                  : 'departure-help'
-              }
-              className="app-input"
-            />
-            <p
-              id="departure-help"
-              className="mt-2 text-xs leading-relaxed text-muted-foreground"
-            >
-              현재 이후의 시각을 선택해주세요.
-            </p>
-          </Field>
+          <label className="text-sm font-bold" htmlFor="departureLocal">
+            <Calendar className="mr-1.5 inline size-4" aria-hidden /> 출발 시각
+          </label>
+          <input id="departureLocal" type="datetime-local" required value={departureLocal} onChange={(event) => setDepartureLocal(event.target.value)} className="app-input" />
 
           <fieldset>
-            <legend className="mb-2 flex items-center gap-1.5 text-sm font-bold">
-              <Users className="size-4" aria-hidden />
-              최대 인원
-            </legend>
+            <legend className="mb-2 text-sm font-bold"><Users className="mr-1.5 inline size-4" aria-hidden />최대 인원</legend>
             <div className="grid grid-cols-3 gap-2">
               {[2, 3, 4].map((count) => (
-                <label
-                  key={count}
-                  className="cursor-pointer rounded-xl border border-border bg-card py-3 text-center text-sm font-bold has-[:checked]:border-primary has-[:checked]:bg-primary/15 focus-within:ring-2 focus-within:ring-ring"
-                >
-                  <input
-                    type="radio"
-                    name="maxParticipants"
-                    value={count}
-                    defaultChecked={count === 3}
-                    required
-                    className="sr-only"
-                  />
+                <label key={count} className="rounded-xl border bg-card py-3 text-center text-sm font-bold has-[:checked]:border-primary has-[:checked]:bg-primary/15">
+                  <input className="sr-only" type="radio" name="maxParticipants" value={count} checked={maxParticipants === count} onChange={() => setMaxParticipants(count)} />
                   {count}명
                 </label>
               ))}
             </div>
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              방장을 포함해 2~4명까지 모집할 수 있어요.
-            </p>
-            {state.fieldErrors?.maxParticipants?.[0] ? (
-              <p className="mt-2 text-xs text-destructive" role="alert">
-                {state.fieldErrors.maxParticipants[0]}
-              </p>
-            ) : null}
           </fieldset>
 
-          <div className="flex items-start gap-2 rounded-2xl border border-info/30 bg-info-soft px-4 py-3 text-sm">
-            <Info
-              className="mt-0.5 size-4 shrink-0 text-info"
-              aria-hidden
-            />
-            <p className="leading-relaxed">
-              예상 거리·시간·요금은 지도 API가 연결되는 다음 스프린트에서
-              산정합니다. 요금이 산정되기 전에는 모집 확정과 포인트 예치를
-              진행할 수 없어요.
-            </p>
-          </div>
-
-          <p
-            aria-live="polite"
-            className="min-h-5 text-sm text-destructive"
-          >
-            {pending ? '방 정보를 안전하게 저장하고 있어요.' : state.message}
+          <p className="min-h-5 text-sm text-destructive" aria-live="polite">
+            {pending ? '서버에서 경로와 요금을 다시 확인하고 있습니다.' : state.message}
           </p>
         </fieldset>
-
         <BottomBar>
-          <BigButton type="submit" disabled={pending || !idempotencyKey}>
-            {pending ? '방 만드는 중…' : '이 조건으로 방 만들기'}
+          <BigButton type="submit" disabled={pending || !canCreate}>
+            {pending ? '방 만드는 중...' : '이 조건으로 방 만들기'}
           </BigButton>
         </BottomBar>
       </form>
@@ -195,39 +124,60 @@ export default function CreateRoomPage() {
   )
 }
 
-function Field({
-  id,
-  label,
-  icon: Icon,
-  iconClassName,
-  error,
-  children,
-}: {
-  id: string
+function PlaceInputs({ prefix, place }: { prefix: 'origin' | 'destination'; place: SelectablePlaceResult | null }) {
+  return <>
+    <input type="hidden" name={prefix} value={place?.label ?? ''} />
+    <input type="hidden" name={`${prefix}Latitude`} value={place?.latitude ?? ''} />
+    <input type="hidden" name={`${prefix}Longitude`} value={place?.longitude ?? ''} />
+    <input type="hidden" name={`${prefix}Provider`} value={place?.provider ?? ''} />
+    <input type="hidden" name={`${prefix}ProviderPlaceId`} value={place?.providerPlaceId ?? ''} />
+    <input type="hidden" name={`${prefix}SelectionToken`} value={place?.selectionToken ?? ''} />
+  </>
+}
+
+function PlaceSearch({ label, icon: Icon, selected, onSelect, error }: {
   label: string
-  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
-  iconClassName?: string
+  icon: typeof MapPin
+  selected: SelectablePlaceResult | null
+  onSelect: (place: SelectablePlaceResult | null) => void
   error?: string
-  children: React.ReactNode
 }) {
-  return (
-    <div>
-      <label
-        htmlFor={id}
-        className="mb-2 flex items-center gap-1.5 text-sm font-bold"
-      >
-        <Icon
-          className={`size-4 ${iconClassName ?? 'text-foreground'}`}
-          aria-hidden
-        />
-        {label}
-      </label>
-      {children}
-      {error ? (
-        <p id={`${id}-error`} className="mt-2 text-xs text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
+  const inputId = label === '출발지' ? 'origin-search' : 'destination-search'
+  const [query, setQuery] = useState('')
+  const [places, setPlaces] = useState<SelectablePlaceResult[]>([])
+  const [message, setMessage] = useState('')
+  const [searching, setSearching] = useState(false)
+  async function search() {
+    setSearching(true); setMessage(''); setPlaces([]); onSelect(null)
+    try {
+      const response = await fetch(`/api/places?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
+      const body = (await response.json()) as { places?: SelectablePlaceResult[]; error?: string }
+      if (!response.ok || !body.places) throw new Error(body.error || '장소를 검색하지 못했습니다.')
+      setPlaces(body.places)
+    } catch (searchError) {
+      setMessage(searchError instanceof Error ? searchError.message : '장소를 검색하지 못했습니다.')
+    } finally { setSearching(false) }
+  }
+  return <div>
+    <label htmlFor={inputId} className="mb-2 block text-sm font-bold"><Icon className="mr-1.5 inline size-4" aria-hidden />{label}</label>
+    <div className="flex gap-2">
+      <input id={inputId} value={query} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void search() } }} onChange={(event) => { setQuery(event.target.value); if (selected) onSelect(null) }} maxLength={100} className="app-input focus-visible:ring-2 focus-visible:ring-ring" placeholder={`${label} 검색`} />
+      <button aria-label={`${label} 검색`} type="button" onClick={() => void search()} disabled={searching || !query.trim()} className="min-h-11 shrink-0 rounded-xl bg-foreground px-4 text-sm font-bold text-background focus-visible:ring-2 focus-visible:ring-ring">
+        <Search className="size-4" aria-hidden />
+      </button>
     </div>
-  )
+    {places.length ? <ul className="mt-2 rounded-xl border bg-card p-1">{places.map((place) => <li key={`${place.provider}:${place.providerPlaceId}`}><button type="button" onClick={() => { onSelect(place); setPlaces([]); setQuery(place.label) }} className="w-full rounded-lg px-3 py-3 text-left text-sm hover:bg-muted">{place.label}</button></li>)}</ul> : null}
+    <p className="mt-1 text-xs text-destructive" role="status">{error || message}</p>
+  </div>
+}
+
+function RouteSummary({ estimate, loading, error, participants, onRetry }: { estimate: RouteEstimate | null; loading: boolean; error: string; participants: number; onRetry: () => void }) {
+  if (loading) return <p className="rounded-xl bg-muted p-3 text-sm">경로와 예상 요금을 조회하는 중...</p>
+  if (error) return <div className="rounded-xl bg-warn-soft p-3 text-sm text-destructive" role="alert"><p>{error}</p><button type="button" onClick={onRetry} className="mt-2 min-h-9 rounded-lg border px-3 font-bold focus-visible:ring-2 focus-visible:ring-ring">경로 다시 시도</button></div>
+  if (!estimate) return null
+  return <dl className="grid grid-cols-2 gap-3 rounded-xl bg-muted p-3 text-sm">
+    <div><dt className="text-xs text-muted-foreground">거리 · 시간</dt><dd className="font-bold">{(estimate.distanceMeters / 1000).toFixed(1)}km · {Math.ceil(estimate.durationSeconds / 60)}분</dd></div>
+    <div><dt className="text-xs text-muted-foreground">예상 총요금</dt><dd className="font-bold">{estimate.estimatedFareWon === null ? '지도 API 요금 정보 없음' : `${estimate.estimatedFareWon.toLocaleString('ko-KR')}원`}</dd></div>
+    <div className="col-span-2"><dt className="text-xs text-muted-foreground">최대 인원 기준 1인 예치</dt><dd className="font-extrabold">{estimate.estimatedFareWon === null ? '계산할 수 없음' : `${Math.ceil(estimate.estimatedFareWon / participants).toLocaleString('ko-KR')}P`}</dd></div>
+  </dl>
 }

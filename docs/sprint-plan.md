@@ -125,11 +125,11 @@
 목표: 제공자에 종속되지 않는 장소·경로·거리·시간·요금 계산 계층을 구축한다.
 
 - [x] 장소 검색, 좌표, 경로, 요금 추정의 제공자 중립 인터페이스를 정의한다. `TR-08`
-- [!] 선택된 지도 제공자 어댑터와 서버 전용 비밀값 구성을 구현한다. `FR-10`, `FR-11`, `FR-14` — DEC-003 제공자·상품·요금 정책 결정 필요
+- [~] 선택된 지도 제공자 어댑터와 서버 전용 비밀값 구성을 구현한다. `FR-10`, `FR-11`, `FR-14` — Kakao/Naver 및 `auto` 전환 구현 완료, Production 키·권한 실제 호출 검증 대기
 - [x] 좌표계, m/km, 초/분, 금액, 반올림, 산정 시각, 오류 형식을 정규화한다.
-- [~] FareEstimate 저장 및 산정 근거 추적을 구현한다. `FR-14`, `FR-32` — 0005 영속 모델·활성 근거 검증 구현, 실제 provider write 경로는 DEC-003 대기
-- [~] 목표 인원 기준 예상 선결제액 `ceil(E/N)` 표시를 구현한다. `FR-15` — 결정적 계산·경계 테스트 완료, 실제 요금 UI는 provider 대기
-- [~] 타임아웃, 제한, 캐시 만료, 경로 없음, 제공자 장애 UI를 구현한다. — typed error·stale 거부 구현, 실제 adapter UI 대기
+- [x] FareEstimate 저장 및 산정 근거 추적을 구현한다. `FR-14`, `FR-32` — 생성·확정 시 서버 경로 재조회 및 트랜잭션 저장
+- [x] 목표 인원 기준 예상 선결제액 `ceil(E/N)` 표시를 구현한다. `FR-15` — 모집 생성·추천 카드·상세 화면 반영
+- [~] 타임아웃, 제한, 캐시 만료, 경로 없음, 제공자 장애 UI를 구현한다. — 8초 timeout, 일반화 오류와 재시도 구현 완료, Production 실제 호출 검증 대기
 
 경계·실패 검증:
 
@@ -376,15 +376,15 @@
 
 ### Sprint 3 — 2026-07-30 ~ 진행 중
 
-- 상태: 진행(DEC-003 차단)
+- 상태: 구현 완료, Production 지도 API 자격 증명·권한 검증 대기
 - 목표: 제공자 교체 가능한 장소·경로·요금 계약과 추적 가능한 FareEstimate 기반 구축
 - 담당: Codex; 검토 `map_recommendation_reviewer`, `neon_database_reliability_reviewer`
 - 대상 요구사항: `FR-10~15`, `FR-32`, `TR-08`; Sprint 5 선행 보호 `TR-04~05`
-- 완료: Place/Route/Fare 포트 분리, WGS84·m·초·정수 금액·UTC 정규화, typed error·stale 거부, `ceil(E/N)` 계산, 장소 좌표·revision·FareEstimate evidence 0005 적용, 예치 전 활성 근거·만료·금액 검증, 구버전 앱도 근거 없는 CONFIRMED 전이를 못 하도록 DB 0006 guard 적용
-- 이월: 네이버/카카오 adapter, 장소 검색·현재 위치 UI, 실제 경로·요금 산정, provider 오류 UI
-- 차단: DEC-003 제공자·API 상품·요금/할증·원화-포인트·TTL/fallback 결정 미완료
-- 검증: 운영 Neon 0005·0006 사전검사·transaction 적용·checksum/장소/FareEstimate/CONFIRMED guard/원장 verify 통과. ESLint·TypeScript·Vitest 56개·Next.js build 통과
-- 회고/다음 조치: DEC-003 결정 후 선택 adapter 하나를 구현하고 같은 contract fixture로 교체 가능성을 검증한다.
+- 완료: Place/Route/Fare 포트 분리, Kakao Local·Mobility와 Naver Geocoding·Directions 5 adapter, `auto` fallback, WGS84·m·초·정수 금액·UTC 정규화, 8초 timeout, 서명된 장소 선택, 생성·확정 시 서버 재조회, FareEstimate 저장, `ceil(E/N)` UI, 지도·오류·재시도 상태 구현
+- 이월: 현재 위치 UI, 인접 목적지 추천, 운영 공급자 실제 호출 검증
+- 차단: Production 자격 증명·상품 권한·Kakao JavaScript SDK 도메인 등록 확인
+- 검증: 운영 Neon 0005·0006 사전검사·transaction 적용·checksum/장소/FareEstimate/CONFIRMED guard/원장 verify 통과. 지도 adapter·fallback·응답·서명·좌표 계약 테스트 포함 ESLint·TypeScript·Vitest·Next.js build 통과
+- 회고/다음 조치: Production 키 등록 후 인증 사용자로 장소 검색·경로·요금·지도 표시를 실제 검증하고 DEC-005 확정 뒤 인접 목적지 추천을 진행한다.
 
 ### Sprint 4 — 2026-07-30 ~ 진행 중
 

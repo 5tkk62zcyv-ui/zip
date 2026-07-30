@@ -10,6 +10,12 @@ import {
   normalizePointReason,
   parsePointAmount,
 } from '@/lib/core/point-validation'
+import {
+  estimateRoute,
+  RoutingError,
+  type RoutingProvider,
+} from '@/lib/routing'
+import { verifyPlaceSelectionToken } from '@/lib/routing/place-token'
 
 const MAX_POINTS = MAX_POINT_AMOUNT
 
@@ -28,6 +34,10 @@ type TripRow = {
   approvedCount: number
   currentUserStatus: string | null
   hasRecommendationLocation: boolean
+  originLatitude: number | null
+  originLongitude: number | null
+  destinationLatitude: number | null
+  destinationLongitude: number | null
 }
 
 export async function getCoreDashboard(userId: string, isAdmin: boolean) {
@@ -50,6 +60,10 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
           g.departure_at AS "departureAt",
           g.max_participants AS "maxParticipants",
           g.estimated_fare AS "estimatedFare",
+          g.origin_latitude::float8 AS "originLatitude",
+          g.origin_longitude::float8 AS "originLongitude",
+          g.destination_latitude::float8 AS "destinationLatitude",
+          g.destination_longitude::float8 AS "destinationLongitude",
           g.status,
           count(p.user_id) FILTER (
             WHERE p.status IN (
@@ -340,118 +354,195 @@ function positiveInteger(value: number, label: string) {
 export async function createTrip(input: {
   actorId: string
   origin: string
+  originLatitude: number
+  originLongitude: number
+  originProvider: RoutingProvider
+  originProviderPlaceId: string
+  originSelectionToken: string
   destination: string
+  destinationLatitude: number
+  destinationLongitude: number
+  destinationProvider: RoutingProvider
+  destinationProviderPlaceId: string
+  destinationSelectionToken: string
   departureAt: Date
   maxParticipants: number
   idempotencyKey: string
 }) {
-  const origin = input.origin.trim()
-  const destination = input.destination.trim()
-  if (!origin || !destination || origin.length > 120 || destination.length > 120) {
-    throw new CoreError('출발지와 도착지를 1~120자로 입력해주세요.')
+  await ensureDatabaseIdentity()
+  const sql = getDatabase()
+  const replayRows = await sql`
+    SELECT trip_id AS "tripId", origin, destination,
+           departure_at AS "departureAt",
+           max_participants AS "maxParticipants",
+           origin_latitude::float8 AS "originLatitude",
+           origin_longitude::float8 AS "originLongitude",
+           origin_place_provider AS "originProvider",
+           origin_provider_place_id AS "originProviderPlaceId",
+           destination_latitude::float8 AS "destinationLatitude",
+           destination_longitude::float8 AS "destinationLongitude",
+           destination_place_provider AS "destinationProvider",
+           destination_provider_place_id AS "destinationProviderPlaceId"
+    FROM trip_groups
+    WHERE host_user_id = ${input.actorId}
+      AND creation_idempotency_key = ${input.idempotencyKey}
+    LIMIT 1
+  `
+  if (replayRows.length) {
+    const row = replayRows[0] as Record<string, unknown>
+    const same =
+      row.origin === input.origin.trim() &&
+      row.destination === input.destination.trim() &&
+      Number(row.originLatitude) === input.originLatitude &&
+      Number(row.originLongitude) === input.originLongitude &&
+      row.originProvider === input.originProvider &&
+      row.originProviderPlaceId === input.originProviderPlaceId.trim() &&
+      Number(row.destinationLatitude) === input.destinationLatitude &&
+      Number(row.destinationLongitude) === input.destinationLongitude &&
+      row.destinationProvider === input.destinationProvider &&
+      row.destinationProviderPlaceId === input.destinationProviderPlaceId.trim() &&
+      new Date(String(row.departureAt)).getTime() === input.departureAt.getTime() &&
+      Number(row.maxParticipants) === input.maxParticipants
+    if (!same) throw new CoreError('이미 사용한 요청 식별자입니다. 페이지를 새로 열어 다시 시도해 주세요.')
+    return String(row.tripId)
+  }
+
+  const originPlace = {
+    label: input.origin.trim(),
+    latitude: input.originLatitude,
+    longitude: input.originLongitude,
+    provider: input.originProvider,
+    providerPlaceId: input.originProviderPlaceId.trim(),
+  }
+  const destinationPlace = {
+    label: input.destination.trim(),
+    latitude: input.destinationLatitude,
+    longitude: input.destinationLongitude,
+    provider: input.destinationProvider,
+    providerPlaceId: input.destinationProviderPlaceId.trim(),
   }
   if (
-    !Number.isInteger(input.maxParticipants) ||
-    input.maxParticipants < 2 ||
-    input.maxParticipants > 4
-  ) {
-    throw new CoreError('최대 인원은 2~4명이어야 합니다.')
-  }
-  if (!Number.isFinite(input.departureAt.getTime()) || input.departureAt <= new Date()) {
-    throw new CoreError('출발 시각은 현재 이후여야 합니다.')
-  }
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      input.idempotencyKey,
+    !verifyPlaceSelectionToken(input.originSelectionToken, originPlace, input.actorId) ||
+    !verifyPlaceSelectionToken(
+      input.destinationSelectionToken,
+      destinationPlace,
+      input.actorId,
     )
   ) {
-    throw new CoreError('요청 식별자가 올바르지 않습니다.')
+    throw new CoreError('장소 검색 결과가 만료되었거나 변경되었습니다. 다시 검색해 선택해 주세요.')
   }
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await inTransaction(async (client) => {
-        const actor = await client.query(
-          `SELECT 1
-           FROM users
-           WHERE user_id = $1
-             AND account_status = 'ACTIVE'
-             AND btrim(student_id) <> ''
-             AND btrim(name) <> ''
-             AND btrim(school_email) <> ''
-           FOR SHARE`,
-          [input.actorId],
-        )
-        if (!actor.rowCount) {
-          throw new CoreError('가입 필수 정보를 완료한 사용자만 방을 만들 수 있습니다.')
-        }
-
-        const existing = await client.query(
-          `SELECT
-             trip_id,
-             origin,
-             destination,
-             departure_at,
-             max_participants
-           FROM trip_groups
-           WHERE host_user_id = $1 AND creation_idempotency_key = $2`,
-          [input.actorId, input.idempotencyKey],
-        )
-        if (existing.rowCount) {
-          const row = existing.rows[0]
-          const isSameRequest =
-            row.origin === origin &&
-            row.destination === destination &&
-            new Date(row.departure_at).getTime() === input.departureAt.getTime() &&
-            Number(row.max_participants) === input.maxParticipants
-          if (!isSameRequest) {
-            throw new CoreError(
-              '이미 사용한 요청 식별자입니다. 페이지를 새로 열어 다시 시도해주세요.',
-            )
-          }
-          return row.trip_id as string
-        }
-
-        const created = await client.query(
-          `INSERT INTO trip_groups (
-             host_user_id,
-             origin,
-             destination,
-             departure_at,
-             max_participants,
-             creation_idempotency_key
-           ) VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING trip_id`,
-          [
-            input.actorId,
-            origin,
-            destination,
-            input.departureAt,
-            input.maxParticipants,
-            input.idempotencyKey,
-          ],
-        )
-        const tripId = created.rows[0].trip_id as string
-        await client.query(
-          `INSERT INTO trip_participants
-             (trip_id, user_id, role, status, approved_at)
-           VALUES ($1, $2, 'HOST', 'APPROVED', now())`,
-          [tripId, input.actorId],
-        )
-        return tripId
-      })
-    } catch (error) {
-      const code =
-        typeof error === 'object' && error && 'code' in error
-          ? String(error.code)
-          : ''
-      if (attempt < 2 && ['23505', '40001', '40P01'].includes(code)) continue
-      throw error
+  let estimate
+  try {
+    estimate = await estimateRoute(
+      { latitude: input.originLatitude, longitude: input.originLongitude },
+      { latitude: input.destinationLatitude, longitude: input.destinationLongitude },
+    )
+  } catch (error) {
+    if (error instanceof RoutingError && error.code === 'NOT_CONFIGURED') {
+      throw new CoreError('지도 API가 아직 설정되지 않아 방을 만들 수 없습니다.')
     }
+    throw new CoreError('경로와 예상 요금을 다시 확인하지 못했습니다.')
+  }
+  if (estimate.estimatedFareWon === null) {
+    throw new CoreError('지도 API가 예상 택시요금을 제공하지 않아 방을 만들 수 없습니다.')
   }
 
-  throw new CoreError('방 생성 요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.')
+  return inTransaction(async (client) => {
+    const existing = await client.query(
+      `SELECT trip_id, origin, destination, departure_at, max_participants,
+              origin_latitude, origin_longitude, origin_place_provider,
+              origin_provider_place_id, destination_latitude,
+              destination_longitude, destination_place_provider,
+              destination_provider_place_id
+       FROM trip_groups
+       WHERE host_user_id = $1 AND creation_idempotency_key = $2`,
+      [input.actorId, input.idempotencyKey],
+    )
+    if (existing.rowCount) {
+      const row = existing.rows[0]
+      const same =
+        row.origin === input.origin.trim() &&
+        row.destination === input.destination.trim() &&
+        Number(row.origin_latitude) === input.originLatitude &&
+        Number(row.origin_longitude) === input.originLongitude &&
+        row.origin_place_provider === input.originProvider &&
+        row.origin_provider_place_id === input.originProviderPlaceId.trim() &&
+        Number(row.destination_latitude) === input.destinationLatitude &&
+        Number(row.destination_longitude) === input.destinationLongitude &&
+        row.destination_place_provider === input.destinationProvider &&
+        row.destination_provider_place_id === input.destinationProviderPlaceId.trim() &&
+        new Date(row.departure_at).getTime() === input.departureAt.getTime() &&
+        Number(row.max_participants) === input.maxParticipants
+      if (!same) {
+        throw new CoreError('이미 사용한 요청 식별자입니다. 페이지를 새로 열어 다시 시도해 주세요.')
+      }
+      return row.trip_id as string
+    }
+
+    const actor = await client.query(
+      `SELECT 1 FROM users WHERE user_id = $1 AND account_status = 'ACTIVE'
+       AND btrim(student_id) <> '' AND btrim(name) <> ''
+       AND btrim(school_email) <> '' FOR SHARE`,
+      [input.actorId],
+    )
+    if (!actor.rowCount) throw new CoreError('가입 필수 정보를 완료한 사용자만 방을 만들 수 있습니다.')
+
+    const created = await client.query(
+      `INSERT INTO trip_groups (
+         host_user_id, origin, destination,
+         origin_latitude, origin_longitude, origin_location_source,
+         origin_place_provider, origin_provider_place_id,
+         destination_latitude, destination_longitude, destination_location_source,
+         destination_place_provider, destination_provider_place_id,
+         departure_at, max_participants, estimated_fare, creation_idempotency_key
+       ) VALUES (
+         $1,$2,$3,$4,$5,'SEARCH',$6,$7,$8,$9,'SEARCH',$10,$11,$12,$13,$14,$15
+       ) RETURNING trip_id, location_revision`,
+      [
+        input.actorId, input.origin.trim(), input.destination.trim(),
+        input.originLatitude, input.originLongitude, input.originProvider,
+        input.originProviderPlaceId.trim(), input.destinationLatitude,
+        input.destinationLongitude, input.destinationProvider,
+        input.destinationProviderPlaceId.trim(), input.departureAt,
+        input.maxParticipants, estimate.estimatedFareWon, input.idempotencyKey,
+      ],
+    )
+    const tripId = created.rows[0].trip_id as string
+    const fare = await client.query(
+      `INSERT INTO fare_estimates (
+         trip_id, trip_location_revision, route_calculation_id,
+         fare_calculation_id, provider_key, route_distance_m, duration_seconds,
+         estimated_fare_won, deposit_points_total, fare_source,
+         pricing_policy_key, pricing_policy_version, calculated_at, expires_at,
+         request_trace_id, request_fingerprint, calculation_basis, idempotency_key
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17
+       ) RETURNING fare_estimate_id`,
+      [
+        tripId, created.rows[0].location_revision, estimate.routeCalculationId,
+        estimate.fareCalculationId, estimate.provider, estimate.distanceMeters,
+        estimate.durationSeconds, estimate.estimatedFareWon, estimate.fareSource,
+        estimate.pricingPolicyKey, estimate.pricingPolicyVersion,
+        estimate.calculatedAt, estimate.expiresAt, estimate.requestTraceId,
+        estimate.requestFingerprint, JSON.stringify(estimate.calculationBasis),
+        input.idempotencyKey,
+      ],
+    )
+    await client.query(
+      `UPDATE trip_groups SET current_fare_estimate_id = $2 WHERE trip_id = $1`,
+      [tripId, fare.rows[0].fare_estimate_id],
+    )
+    await client.query(
+      `INSERT INTO trip_participants
+         (trip_id, user_id, role, status, approved_at)
+       VALUES ($1, $2, 'HOST', 'APPROVED', now())`,
+      [tripId, input.actorId],
+    )
+    return tripId
+  })
 }
+
 
 export async function applyToTrip(
   actorId: string,
@@ -715,6 +806,67 @@ export async function confirmTripAndDeposit(
   tripId: string,
   idempotencyKey: string,
 ) {
+  await ensureDatabaseIdentity()
+  const sql = getDatabase()
+  const snapshots = await sql`
+    SELECT host_user_id AS "hostUserId", status,
+           confirmation_idempotency_key AS "confirmationIdempotencyKey",
+           location_revision AS "locationRevision",
+           origin_latitude::float8 AS "originLatitude",
+           origin_longitude::float8 AS "originLongitude",
+           destination_latitude::float8 AS "destinationLatitude",
+           destination_longitude::float8 AS "destinationLongitude"
+    FROM trip_groups WHERE trip_id = ${tripId} LIMIT 1
+  `
+  const snapshot = snapshots[0] as
+    | {
+        hostUserId: string
+        status: string
+        confirmationIdempotencyKey: string | null
+        locationRevision: string
+        originLatitude: number | null
+        originLongitude: number | null
+        destinationLatitude: number | null
+        destinationLongitude: number | null
+      }
+    | undefined
+  if (!snapshot || snapshot.hostUserId !== actorId) {
+    throw new CoreError('방장만 모집을 확정할 수 있습니다.')
+  }
+  if (
+    snapshot.status === 'CONFIRMED' &&
+    snapshot.confirmationIdempotencyKey === idempotencyKey
+  ) return
+  if (snapshot.status !== 'CLOSED') {
+    throw new CoreError('종료된 모집만 확정할 수 있습니다.')
+  }
+  if (
+    snapshot.originLatitude === null ||
+    snapshot.originLongitude === null ||
+    snapshot.destinationLatitude === null ||
+    snapshot.destinationLongitude === null
+  ) {
+    throw new CoreError('저장된 장소 좌표가 없어 예상 요금을 다시 산정할 수 없습니다.')
+  }
+  let refreshedEstimate
+  try {
+    refreshedEstimate = await estimateRoute(
+      {
+        latitude: snapshot.originLatitude,
+        longitude: snapshot.originLongitude,
+      },
+      {
+        latitude: snapshot.destinationLatitude,
+        longitude: snapshot.destinationLongitude,
+      },
+    )
+  } catch {
+    throw new CoreError('확정 직전 예상 요금을 다시 산정하지 못했습니다.')
+  }
+  if (refreshedEstimate.estimatedFareWon === null) {
+    throw new CoreError('지도 API가 예상 택시요금을 제공하지 않아 모집을 확정할 수 없습니다.')
+  }
+
   await inTransaction(async (client) => {
     const trip = await client.query(
       `SELECT
@@ -737,6 +889,47 @@ export async function confirmTripAndDeposit(
       [tripId],
     )
     const row = trip.rows[0]
+    if (
+      row &&
+      row.host_user_id === actorId &&
+      row.status === 'CLOSED'
+    ) {
+      if (row.location_revision !== snapshot.locationRevision) {
+        throw new CoreError('장소가 변경되었습니다. 예상 요금을 다시 확인해 주세요.')
+      }
+      const fare = await client.query(
+        `INSERT INTO fare_estimates (
+           trip_id, trip_location_revision, route_calculation_id,
+           fare_calculation_id, provider_key, route_distance_m, duration_seconds,
+           estimated_fare_won, deposit_points_total, fare_source,
+           pricing_policy_key, pricing_policy_version, calculated_at, expires_at,
+           request_trace_id, request_fingerprint, calculation_basis, idempotency_key
+         ) VALUES (
+           $1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17
+         ) RETURNING fare_estimate_id`,
+        [
+          tripId, row.location_revision, refreshedEstimate.routeCalculationId,
+          refreshedEstimate.fareCalculationId, refreshedEstimate.provider,
+          refreshedEstimate.distanceMeters, refreshedEstimate.durationSeconds,
+          refreshedEstimate.estimatedFareWon, refreshedEstimate.fareSource,
+          refreshedEstimate.pricingPolicyKey, refreshedEstimate.pricingPolicyVersion,
+          refreshedEstimate.calculatedAt, refreshedEstimate.expiresAt,
+          refreshedEstimate.requestTraceId, refreshedEstimate.requestFingerprint,
+          JSON.stringify(refreshedEstimate.calculationBasis), idempotencyKey,
+        ],
+      )
+      await client.query(
+        `UPDATE trip_groups
+         SET current_fare_estimate_id = $2, estimated_fare = $3
+         WHERE trip_id = $1`,
+        [tripId, fare.rows[0].fare_estimate_id, refreshedEstimate.estimatedFareWon],
+      )
+      row.current_fare_estimate_id = fare.rows[0].fare_estimate_id
+      row.estimated_fare = refreshedEstimate.estimatedFareWon
+      row.deposit_points_total = refreshedEstimate.estimatedFareWon
+      row.estimate_location_revision = row.location_revision
+      row.estimate_expires_at = refreshedEstimate.expiresAt
+    }
     if (!row || row.host_user_id !== actorId) throw new CoreError('방장만 모집을 확정할 수 있습니다.')
     if (row.status === 'CONFIRMED' && row.confirmation_idempotency_key === idempotencyKey) return
     if (row.status !== 'CLOSED') throw new CoreError('종료된 모집만 확정할 수 있습니다.')

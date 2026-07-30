@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
 import { formatDeparture, maskName } from '@/components/database-room-card'
 import type { RankedRecommendation } from '@/lib/recommendations/rank'
+import { RoomRouteEstimate } from '@/components/room-route-estimate'
 
 export function RecommendationCard({
   recommendation,
@@ -72,6 +73,18 @@ export function RecommendationCard({
           </dd>
         </div>
       </dl>
+
+      <RoomRouteEstimate
+        origin={{
+          latitude: recommendation.originPoint.latitude,
+          longitude: recommendation.originPoint.longitude,
+        }}
+        destination={{
+          latitude: recommendation.destinationPoint.latitude,
+          longitude: recommendation.destinationPoint.longitude,
+        }}
+        maxParticipants={recommendation.maxParticipants}
+      />
 
       <p className="text-xs leading-relaxed text-muted-foreground">
         동일한 지도 장소 ID의 목적지만 추천합니다. 참여는 상세 화면에서 직접

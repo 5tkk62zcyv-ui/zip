@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { ArrowRight, Clock, Users } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/status-badge'
+import { RoomRouteEstimate } from '@/components/room-route-estimate'
 
 export type DatabaseRoomSummary = {
   tripId: string
@@ -16,6 +17,10 @@ export type DatabaseRoomSummary = {
   approvedCount: number
   currentUserStatus: string | null
   hasRecommendationLocation: boolean
+  originLatitude: number | null
+  originLongitude: number | null
+  destinationLatitude: number | null
+  destinationLongitude: number | null
 }
 
 const roomStatusLabels: Record<string, string> = {
@@ -107,6 +112,27 @@ export function DatabaseRoomCard({
           지도 기반 예상 요금이 아직 산정되지 않아 분담금을 표시하지 않습니다.
         </p>
       ) : null}
+
+      {room.originLatitude !== null &&
+      room.originLongitude !== null &&
+      room.destinationLatitude !== null &&
+      room.destinationLongitude !== null ? (
+        <RoomRouteEstimate
+          origin={{
+            latitude: room.originLatitude,
+            longitude: room.originLongitude,
+          }}
+          destination={{
+            latitude: room.destinationLatitude,
+            longitude: room.destinationLongitude,
+          }}
+          maxParticipants={room.maxParticipants}
+        />
+      ) : (
+        <p className="rounded-xl bg-muted p-3 text-xs text-muted-foreground">
+          이 방에는 지도 좌표가 저장되어 있지 않습니다.
+        </p>
+      )}
 
       {room.hasRecommendationLocation ? (
         <Link

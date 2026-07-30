@@ -1,74 +1,116 @@
-import { MapPin, Flag } from 'lucide-react'
-import { cn } from '@/lib/utils'
+'use client'
 
-/**
- * 실제 지도 API 대신 사용하는 스타일 목업 지도.
- * 도로 격자 + 출발/도착 핀 + 점선 경로를 표현한다.
- */
+import { useEffect, useRef, useState } from 'react'
+import { cn } from '@/lib/utils'
+import type { Coordinates } from '@/lib/routing/types'
+
+type KakaoMaps = {
+  load(callback: () => void): void
+  LatLng: new (latitude: number, longitude: number) => unknown
+  Map: new (container: HTMLElement, options: object) => {
+    setBounds(bounds: unknown): void
+  }
+  Marker: new (options: object) => unknown
+  LatLngBounds: new () => { extend(point: unknown): void }
+}
+
+declare global {
+  interface Window {
+    kakao?: { maps: KakaoMaps }
+  }
+}
+
 export function RouteMap({
   origin,
   destination,
   className,
 }: {
-  origin: string
-  destination: string
+  origin?: Coordinates | null
+  destination?: Coordinates | null
   className?: string
 }) {
+  const container = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string>()
+  const [loaded, setLoaded] = useState(false)
+  const key = process.env.NEXT_PUBLIC_KAKAO_MAP_JS_KEY
+  const visibleError = key
+    ? error
+    : '카카오 지도 JavaScript 키가 설정되지 않았습니다.'
+
+  useEffect(() => {
+    if (!key) return
+    if (!origin && !destination) return
+
+    const initialize = () => {
+      const maps = window.kakao?.maps
+      if (!maps || !container.current) {
+        setError('지도를 불러오지 못했습니다.')
+        return
+      }
+      maps.load(() => {
+        if (!container.current) return
+        const first = origin ?? destination
+        if (!first) return
+        const center = new maps.LatLng(first.latitude, first.longitude)
+        const map = new maps.Map(container.current, { center, level: 6 })
+        const bounds = new maps.LatLngBounds()
+        for (const point of [origin, destination]) {
+          if (!point) continue
+          const position = new maps.LatLng(point.latitude, point.longitude)
+          new maps.Marker({ map, position })
+          bounds.extend(position)
+        }
+        if (origin && destination) map.setBounds(bounds)
+        setLoaded(true)
+        setError(undefined)
+      })
+    }
+
+    if (window.kakao?.maps) {
+      initialize()
+      return
+    }
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-taxi-kakao-map]',
+    )
+    const script = existing ?? document.createElement('script')
+    const onLoad = () => initialize()
+    const onError = () => setError('지도 SDK를 불러오지 못했습니다.')
+    script.addEventListener('load', onLoad)
+    script.addEventListener('error', onError)
+    if (!existing) {
+      script.dataset.taxiKakaoMap = 'true'
+      script.async = true
+      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false`
+      document.head.appendChild(script)
+    }
+    return () => {
+      script.removeEventListener('load', onLoad)
+      script.removeEventListener('error', onError)
+    }
+  }, [destination, key, origin])
+
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-2xl border border-border bg-secondary/40',
+        'relative min-h-48 overflow-hidden rounded-2xl border border-border bg-muted',
         className,
       )}
     >
-      <svg
-        viewBox="0 0 320 180"
-        className="h-full w-full"
-        preserveAspectRatio="xMidYMid slice"
-        aria-hidden
-      >
-        {/* 배경 도로 격자 */}
-        <g stroke="var(--border)" strokeWidth="10" opacity="0.6">
-          <line x1="0" y1="45" x2="320" y2="45" />
-          <line x1="0" y1="120" x2="320" y2="120" />
-          <line x1="80" y1="0" x2="80" y2="180" />
-          <line x1="220" y1="0" x2="220" y2="180" />
-        </g>
-        <g stroke="var(--muted)" strokeWidth="3" opacity="0.9">
-          <line x1="0" y1="80" x2="320" y2="80" />
-          <line x1="150" y1="0" x2="150" y2="180" />
-        </g>
-
-        {/* 경로 (점선) */}
-        <path
-          d="M60 135 C 110 120, 120 70, 175 60 S 250 45, 270 40"
-          fill="none"
-          stroke="var(--primary)"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeDasharray="2 9"
-        />
-      </svg>
-
-      {/* 출발 핀 */}
-      <div className="absolute bottom-6 left-4 flex items-center gap-1.5">
-        <span className="flex size-7 items-center justify-center rounded-full bg-info text-info-foreground shadow">
-          <MapPin className="size-4" />
-        </span>
-        <span className="rounded-full bg-card/90 px-2 py-0.5 text-[11px] font-bold shadow-sm">
-          {origin}
-        </span>
-      </div>
-
-      {/* 도착 핀 */}
-      <div className="absolute right-4 top-5 flex items-center gap-1.5">
-        <span className="rounded-full bg-card/90 px-2 py-0.5 text-[11px] font-bold shadow-sm">
-          {destination}
-        </span>
-        <span className="flex size-7 items-center justify-center rounded-full bg-warn text-warn-foreground shadow">
-          <Flag className="size-4" />
-        </span>
-      </div>
+      <div ref={container} className="absolute inset-0" aria-label="출발지와 목적지 지도" />
+      {visibleError ? (
+        <p className="absolute inset-0 grid place-items-center bg-muted p-5 text-center text-sm text-muted-foreground" role="status">
+          {visibleError}
+        </p>
+      ) : !origin && !destination ? (
+        <p className="absolute inset-0 grid place-items-center p-5 text-center text-sm text-muted-foreground">
+          장소를 선택하면 지도에 표시됩니다.
+        </p>
+      ) : !loaded ? (
+        <p className="absolute inset-0 grid place-items-center bg-muted p-5 text-center text-sm text-muted-foreground" role="status">
+          지도를 불러오는 중...
+        </p>
+      ) : null}
     </div>
   )
 }

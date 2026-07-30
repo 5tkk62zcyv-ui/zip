@@ -18,6 +18,7 @@ import { MobileShell } from '@/components/mobile-shell'
 import { PendingSubmitButton } from '@/components/pending-submit-button'
 import { StatusBadge } from '@/components/status-badge'
 import { TopBar } from '@/components/top-bar'
+import { RouteMap } from '@/components/route-map'
 import { Card, CardTitle } from '@/components/ui/card'
 import { requireCompleteUser } from '@/lib/auth/session'
 import { getCoreDashboard } from '@/lib/core/service'
@@ -99,6 +100,22 @@ export default async function RoomDetailPage({
             value={formatDeparture(room.departureAt)}
           />
         </Card>
+
+        {room.originLatitude !== null &&
+        room.originLongitude !== null &&
+        room.destinationLatitude !== null &&
+        room.destinationLongitude !== null ? (
+          <RouteMap
+            origin={{
+              latitude: room.originLatitude,
+              longitude: room.originLongitude,
+            }}
+            destination={{
+              latitude: room.destinationLatitude,
+              longitude: room.destinationLongitude,
+            }}
+          />
+        ) : null}
 
         <Card className="gap-3">
           <CardTitle>예상 분담금</CardTitle>
