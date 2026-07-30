@@ -15,6 +15,7 @@ export type DatabaseRoomSummary = {
   status: string
   approvedCount: number
   currentUserStatus: string | null
+  hasRecommendationLocation: boolean
 }
 
 const roomStatusLabels: Record<string, string> = {
@@ -49,8 +50,7 @@ export function participantStatusLabel(status: string | null) {
 
 export function estimatedShareLabel(room: DatabaseRoomSummary) {
   if (room.estimatedFare === null) return '산정 전'
-  const participantCount = Math.max(room.approvedCount, 1)
-  return `${Math.ceil(room.estimatedFare / participantCount).toLocaleString('ko-KR')}P`
+  return `${Math.ceil(room.estimatedFare / room.maxParticipants).toLocaleString('ko-KR')}P`
 }
 
 export function DatabaseRoomCard({
@@ -106,6 +106,15 @@ export function DatabaseRoomCard({
         <p className="text-xs text-muted-foreground">
           지도 기반 예상 요금이 아직 산정되지 않아 분담금을 표시하지 않습니다.
         </p>
+      ) : null}
+
+      {room.hasRecommendationLocation ? (
+        <Link
+          href={`/home?recommendFrom=${room.tripId}#recommendation-heading`}
+          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-primary bg-primary/10 px-4 py-3 text-sm font-bold transition-transform active:scale-[0.99]"
+        >
+          이 경로로 추천 찾기
+        </Link>
       ) : null}
 
       <Link

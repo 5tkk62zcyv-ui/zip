@@ -33,7 +33,16 @@
   적용했고, checksum
   `c955f9e86f534b0a1f852855334c019099f51ab43fbe9f3a5718d6d3bf65c81f`,
   OPEN·출발 전·프로필·정원 guard와 참여 상태 부분 인덱스 검증이 통과했다.
-- 코드 품질 검증은 lint, TypeScript, 테스트 56건, production build가 통과했다.
+- Sprint 5의 `0008_recommendation_evidence_v2`를 운영 DB에 transaction으로
+  적용했고, checksum
+  `c18e743743b110f21988b8679adb4b40069bf62f31c6316ee9e16d0004f52879`,
+  추천 요청·후보 revision·FareEstimate·정책·순위·문구 근거 제약과 stale
+  evidence 차단 trigger 검증이 통과했다.
+- `0009_recommendation_capacity_snapshot_guard`를 운영 DB에 transaction으로
+  적용했고, checksum
+  `7f44bdf7703b3da7ff38514347fa5fcfc1ace3e6a84199e5eb7b8bce5d6352c6`,
+  마지막 좌석 승인과 추천 근거 저장 경쟁의 fail-closed guard 검증이 통과했다.
+- 코드 품질 검증은 lint, TypeScript, 테스트 74건, production build가 통과했다.
 
 ## 남은 위험과 열린 결정
 

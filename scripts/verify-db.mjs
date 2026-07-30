@@ -31,6 +31,16 @@ const confirmationGuardMigrationChecksum = createHash('sha256')
 const participationGuardMigrationChecksum = createHash('sha256')
   .update(await readFile('db/migrations/0007_participation_state_guards.sql'))
   .digest('hex')
+const recommendationEvidenceMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0008_recommendation_evidence_v2.sql'))
+  .digest('hex')
+const recommendationCapacityMigrationChecksum = createHash('sha256')
+  .update(
+    await readFile(
+      'db/migrations/0009_recommendation_capacity_snapshot_guard.sql',
+    ),
+  )
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -110,6 +120,20 @@ try {
           AND checksum = $7
           AND environment = $1
       ) AS participation_guard_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0008_recommendation_evidence_v2'
+          AND checksum = $8
+          AND environment = $1
+      ) AS recommendation_evidence_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0009_recommendation_capacity_snapshot_guard'
+          AND checksum = $9
+          AND environment = $1
+      ) AS recommendation_capacity_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -288,7 +312,31 @@ try {
             OR nullif(btrim(u.name), '') IS NULL
             OR nullif(btrim(u.school_email), '') IS NULL
           )
-      ) AS active_participant_users_valid
+      ) AS active_participant_users_valid,
+      (
+        SELECT count(*) = 0
+        FROM trip_recommendation_evidence e
+        LEFT JOIN fare_estimates f
+          ON f.trip_id = e.candidate_trip_id
+         AND f.fare_estimate_id = e.fare_estimate_id
+        WHERE e.evidence_version = 2
+          AND (
+            f.fare_estimate_id IS NULL
+            OR e.evidence_expires_at <= e.calculated_at
+            OR jsonb_typeof(e.rank_key) <> 'array'
+            OR jsonb_typeof(e.reason_data) <> 'object'
+            OR e.rank_position NOT BETWEEN 1 AND 50
+            OR e.target_participants NOT BETWEEN 2 AND 4
+            OR e.expected_share_points NOT BETWEEN 1 AND 1000000
+          )
+      ) AS recommendation_evidence_v2_valid,
+      EXISTS (
+        SELECT 1
+        FROM pg_trigger
+        WHERE tgrelid = 'trip_recommendation_evidence'::regclass
+          AND tgname = 'trip_recommendation_evidence_validate_v2'
+          AND NOT tgisinternal
+      ) AS recommendation_evidence_v2_trigger_exists
   `, [
     expectedEnvironment,
     expectedFingerprint,
@@ -297,6 +345,8 @@ try {
     fareEvidenceMigrationChecksum,
     confirmationGuardMigrationChecksum,
     participationGuardMigrationChecksum,
+    recommendationEvidenceMigrationChecksum,
+    recommendationCapacityMigrationChecksum,
   ])
 
   const verification = result.rows[0]

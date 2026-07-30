@@ -20,6 +20,7 @@ type TripRow = {
   status: string
   approvedCount: number
   currentUserStatus: string | null
+  hasRecommendationLocation: boolean
 }
 
 export async function getCoreDashboard(userId: string, isAdmin: boolean) {
@@ -49,7 +50,17 @@ export async function getCoreDashboard(userId: string, isAdmin: boolean) {
               'NO_SHOW', 'DISPUTED', 'COMPLETED'
             )
           )::int AS "approvedCount",
-          mine.status AS "currentUserStatus"
+          mine.status AS "currentUserStatus",
+          (
+            g.departure_at > now()
+            AND g.status NOT IN ('CANCELLED', 'EXPIRED', 'COMPLETED')
+            AND g.origin_latitude IS NOT NULL
+            AND g.origin_longitude IS NOT NULL
+            AND g.destination_latitude IS NOT NULL
+            AND g.destination_longitude IS NOT NULL
+            AND g.destination_place_provider IS NOT NULL
+            AND g.destination_provider_place_id IS NOT NULL
+          ) AS "hasRecommendationLocation"
         FROM trip_groups g
         JOIN users host ON host.user_id = g.host_user_id
         LEFT JOIN trip_participants p ON p.trip_id = g.trip_id

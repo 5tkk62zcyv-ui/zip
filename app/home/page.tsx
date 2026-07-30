@@ -4,13 +4,25 @@ import { BrandLogo } from '@/components/brand-logo'
 import { DatabaseRoomCard } from '@/components/database-room-card'
 import { EmptyState } from '@/components/empty-state'
 import { MobileShell } from '@/components/mobile-shell'
+import { RecommendationCard } from '@/components/recommendation-card'
 import { TabBar } from '@/components/tab-bar'
 import { requireCompleteUser } from '@/lib/auth/session'
 import { getCoreDashboard } from '@/lib/core/service'
+import { parseRecommendationSeedParam } from '@/lib/recommendations/seed'
+import { getTripRecommendations } from '@/lib/recommendations/service'
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ recommendFrom?: string | string[] }>
+}) {
+  const { recommendFrom } = await searchParams
+  const explicitSeedTripId = parseRecommendationSeedParam(recommendFrom)
   const user = await requireCompleteUser()
-  const data = await getCoreDashboard(user.userId, user.role === 'ADMIN')
+  const [data, recommendationFeed] = await Promise.all([
+    getCoreDashboard(user.userId, user.role === 'ADMIN'),
+    getTripRecommendations(user.userId, explicitSeedTripId),
+  ])
 
   return (
     <MobileShell>
@@ -52,6 +64,64 @@ export default async function HomePage() {
             포인트는 관리자가 지급하는 가상 포인트입니다.
           </p>
         </Link>
+
+        <section className="mt-7" aria-labelledby="recommendation-heading">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2
+                id="recommendation-heading"
+                className="text-lg font-extrabold"
+              >
+                조건이 맞는 추천
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                실제 방의 좌표·출발 시각·잔여 좌석을 계산한 결과입니다.
+              </p>
+              {recommendationFeed.seed ? (
+                <p className="mt-1 text-xs font-semibold text-foreground">
+                  기준: {recommendationFeed.seed.origin} →{' '}
+                  {recommendationFeed.seed.destination}
+                </p>
+              ) : null}
+            </div>
+            {recommendationFeed.status === 'READY' ? (
+              <span className="shrink-0 text-xs font-semibold text-muted-foreground">
+                최대 5개
+              </span>
+            ) : null}
+          </div>
+
+          {recommendationFeed.status === 'READY' ? (
+            <div className="mt-4 flex flex-col gap-4">
+              {recommendationFeed.recommendations.map((recommendation) => (
+                <RecommendationCard
+                  key={recommendation.tripId}
+                  recommendation={recommendation}
+                />
+              ))}
+              {recommendationFeed.omittedForTraceFailure > 0 ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  근거를 안전하게 저장하지 못한 일부 후보는 표시하지 않았습니다.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-4">
+              <EmptyState
+                label={
+                  recommendationFeed.status === 'NO_SEED'
+                    ? '좌표가 확인된 예정 방이 없어 추천 기준을 만들 수 없습니다.'
+                    : recommendationFeed.status === 'TRACE_FAILED'
+                      ? '추천 근거를 안전하게 저장하지 못해 결과를 표시하지 않습니다.'
+                    : '같은 목적지·300m 이내·출발 전후 15분 조건을 모두 충족하는 방이 없습니다.'
+                }
+              />
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                인접 목적지 추천은 카카오 경로 API 연결 후 제공합니다.
+              </p>
+            </div>
+          )}
+        </section>
 
         <section className="mt-7 pb-4" aria-labelledby="room-list-heading">
           <h2 id="room-list-heading" className="text-lg font-extrabold">
