@@ -17,8 +17,5 @@ export function calculateDemoFinalShare(
   ) {
     throw new Error('INVALID_DEMO_SETTLEMENT_INPUT')
   }
-  if (actualFare % escrowParticipantCount !== 0) {
-    throw new Error('DEMO_SETTLEMENT_REMAINDER_UNSUPPORTED')
-  }
-  return actualFare / escrowParticipantCount
+  return Math.ceil(actualFare / escrowParticipantCount)
 }

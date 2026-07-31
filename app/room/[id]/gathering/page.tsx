@@ -167,11 +167,13 @@ export default async function GatheringPage({
             href={
               trip.status === 'COMPLETED'
                 ? `/room/${trip.tripId}/settle/complete`
-                : `/room/${trip.tripId}/settle`
+                : trip.status === 'IN_PROGRESS'
+                  ? `/room/${trip.tripId}`
+                  : `/room/${trip.tripId}/settle`
             }
             className="flex min-h-12 items-center justify-center rounded-full border border-border bg-background px-6 py-3 text-[17px]"
           >
-            {trip.status === 'IN_PROGRESS' ? '실제 요금 정산' : '정산 현황 보기'}
+            {trip.status === 'IN_PROGRESS' ? '방 상세에서 도착 처리' : '정산 현황 보기'}
           </Link>
         ) : null}
       </BottomBar>

@@ -62,7 +62,7 @@ export default async function SettleCompletePage({
           />
           <Row label="정산 인원" value={`${settlement.participantCount}명`} />
           <Row
-            label="노쇼 포함"
+            label="노쇼·미탑승 반환"
             value={`${noShowCount}명`}
           />
           <Row
@@ -70,6 +70,7 @@ export default async function SettleCompletePage({
             value={`${Number(settlement.finalShare).toLocaleString('ko-KR')}P`}
             strong
           />
+          <Row label="정산 상태" value="정산 완료" strong />
         </Card>
 
         <section>

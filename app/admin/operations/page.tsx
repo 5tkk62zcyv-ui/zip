@@ -1,4 +1,5 @@
 import { AdminReadPage } from '@/components/admin/admin-read-page'
+import { formatDeparture } from '@/components/database-room-card'
 import { Card } from '@/components/ui/card'
 import { requireAdmin } from '@/lib/auth/session'
 import { getAdminOperationsDashboard } from '@/lib/admin/service'
@@ -19,7 +20,7 @@ export default async function AdminOperationsPage() {
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
             인원 {trip.participantCount}/{trip.maxParticipants}명 ·{' '}
-            {new Date(trip.departureAt).toLocaleString('ko-KR')}
+            {formatDeparture(trip.departureAt)}
           </p>
         </Card>
       ))}

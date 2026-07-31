@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { requireAdmin, requireCompleteUser } from '@/lib/auth/session'
 import { parseCreateTripForm } from '@/lib/core/trip-validation'
 import {
+  arriveAndSettleTrip,
   CoreError,
   applyToTrip,
   approveParticipant,
@@ -429,6 +430,52 @@ export async function startTripAction(formData: FormData) {
     'gathering',
     () => startTrip(user.userId, tripId, idempotencyKey),
     '이동을 시작했습니다.',
+  )
+}
+
+export async function startTripFromRoomAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  await executeRoom(
+    tripId,
+    () => startTrip(user.userId, tripId, idempotencyKey),
+    '출발했습니다.',
+  )
+}
+
+export async function arriveAndSettleAction(formData: FormData) {
+  const user = await requireCompleteUser()
+  const tripId = requireJourneyUuid(text(formData, 'tripId'), '방')
+  const idempotencyKey = requireJourneyUuid(
+    text(formData, 'idempotencyKey'),
+    '요청',
+  )
+  const actualFareText = text(formData, 'actualFare')
+
+  try {
+    await arriveAndSettleTrip(
+      user.userId,
+      tripId,
+      actualFareText,
+      idempotencyKey,
+    )
+  } catch (error) {
+    completeRoom(
+      tripId,
+      error instanceof CoreError
+        ? error.message
+        : '정산을 완료하지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.',
+      true,
+    )
+  }
+  finishJourney(
+    tripId,
+    'settle/complete',
+    '도착 처리와 최종 정산을 완료했습니다.',
   )
 }
 

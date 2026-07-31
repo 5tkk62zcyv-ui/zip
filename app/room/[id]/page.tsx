@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { Clock, MapPin, ShieldCheck, UsersRound } from 'lucide-react'
+import { Clock, MapPin, Play, ShieldCheck, UsersRound } from 'lucide-react'
 import {
   approveFromRoomAction,
   applyFromRoomAction,
+  startTripFromRoomAction,
 } from '@/app/core/actions'
+import { ArrivalSettlementControl } from '@/components/arrival-settlement-control'
 import { Avatar } from '@/components/avatar'
 import { BottomBar } from '@/components/bottom-bar'
 import {
@@ -239,7 +241,32 @@ export default async function RoomDetailPage({
         </Card>
       </main>
 
-      {canEnterJourney ? (
+      {isHost && room.status === 'CONFIRMED' ? (
+        <BottomBar>
+          <form action={startTripFromRoomAction}>
+            <input type="hidden" name="tripId" value={room.tripId} />
+            <input
+              type="hidden"
+              name="idempotencyKey"
+              value={randomUUID()}
+            />
+            <PendingSubmitButton pendingLabel="출발 처리 중...">
+              <Play className="size-5" aria-hidden />
+              출발
+            </PendingSubmitButton>
+          </form>
+        </BottomBar>
+      ) : isHost && room.status === 'IN_PROGRESS' ? (
+        <BottomBar className="flex flex-col gap-2">
+          <ArrivalSettlementControl tripId={room.tripId} />
+          <Link
+            href={`/room/${room.tripId}/gathering`}
+            className="flex min-h-12 items-center justify-center rounded-full border border-border bg-background px-6 py-3 text-[17px]"
+          >
+            집결·노쇼 관리
+          </Link>
+        </BottomBar>
+      ) : canEnterJourney ? (
         <BottomBar>
           <Link
             href={

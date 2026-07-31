@@ -171,6 +171,7 @@ export function DatabaseRoomCard({
 
 export function formatDeparture(value: string) {
   return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
     month: 'long',
     day: 'numeric',
     weekday: 'short',

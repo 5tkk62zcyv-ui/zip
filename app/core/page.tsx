@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Coins, ShieldCheck, Users } from 'lucide-react'
+import { formatDeparture } from '@/components/database-room-card'
 import { MobileShell } from '@/components/mobile-shell'
 import { Card } from '@/components/ui/card'
 import { requireCompleteUser } from '@/lib/auth/session'
@@ -99,7 +100,7 @@ export default async function CorePage({
                     <div>
                       <h3 className="font-extrabold">{trip.origin} → {trip.destination}</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        방장 {trip.hostName} · {new Date(trip.departureAt).toLocaleString('ko-KR')} · {trip.approvedCount}/{trip.maxParticipants}명
+                        방장 {trip.hostName} · {formatDeparture(trip.departureAt)} · {trip.approvedCount}/{trip.maxParticipants}명
                       </p>
                     </div>
                     <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">{trip.status}</span>

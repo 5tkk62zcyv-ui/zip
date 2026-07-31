@@ -6,10 +6,12 @@ export function Modal({
   open,
   onClose,
   children,
+  labelledBy,
 }: {
   open: boolean
   onClose: () => void
   children: React.ReactNode
+  labelledBy?: string
 }) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
@@ -19,14 +21,14 @@ export function Modal({
     returnFocusRef.current = document.activeElement as HTMLElement | null
     const dialog = dialogRef.current
     const focusable = dialog?.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])',
     )
     focusable?.focus()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
       if (e.key !== 'Tab' || !dialog) return
       const items = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])',
       )).filter((item) => !item.hasAttribute('disabled'))
       if (!items.length) return
       const first = items[0]
@@ -60,7 +62,8 @@ export function Modal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="상세 대화상자"
+        aria-label={labelledBy ? undefined : '상세 대화상자'}
+        aria-labelledby={labelledBy}
         tabIndex={-1}
         className="relative m-4 w-full max-w-xl rounded-[18px] border border-border bg-card p-6 animate-in slide-in-from-bottom-4"
       >

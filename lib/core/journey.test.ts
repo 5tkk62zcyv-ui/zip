@@ -14,9 +14,7 @@ describe('calculateDemoFinalShare', () => {
     expect(calculateDemoFinalShare(fare, count)).toBe(share)
   })
 
-  it('blocks a remainder until a platform allocation policy is implemented', () => {
-    expect(() => calculateDemoFinalShare(10_001, 3)).toThrow(
-      'DEMO_SETTLEMENT_REMAINDER_UNSUPPORTED',
-    )
+  it('rounds a remainder up to the next point', () => {
+    expect(calculateDemoFinalShare(13_001, 4)).toBe(3_251)
   })
 })

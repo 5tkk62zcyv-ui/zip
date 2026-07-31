@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { Calculator, Check, Info, UserX } from 'lucide-react'
+import { Check, Info, UserX } from 'lucide-react'
 import {
   confirmJourneyFareAction,
   settleJourneyAction,
-  submitJourneyFareAction,
 } from '@/app/core/actions'
 import { BottomBar } from '@/components/bottom-bar'
 import { MobileShell } from '@/components/mobile-shell'
@@ -32,8 +31,10 @@ export default async function SettlePage({
   if (trip.status === 'COMPLETED') {
     redirect(`/room/${trip.tripId}/settle/complete`)
   }
+  if (trip.status === 'IN_PROGRESS') {
+    redirect(`/room/${trip.tripId}`)
+  }
   const isHost = trip.hostUserId === user.userId
-  const canSubmit = isHost && trip.status === 'IN_PROGRESS' && !settlement
   const canConfirm =
     trip.status === 'SETTLEMENT_PENDING' &&
     settlement?.status === 'PENDING_CONFIRMATION' &&
@@ -94,41 +95,6 @@ export default async function SettlePage({
             않습니다.
           </p>
         </Card>
-
-        {canSubmit ? (
-          <Card className="gap-3">
-            <CardTitle>실제 총요금 입력</CardTitle>
-            <form action={submitJourneyFareAction} className="flex flex-col gap-3">
-              <input type="hidden" name="tripId" value={trip.tripId} />
-              <input
-                type="hidden"
-                name="idempotencyKey"
-                value={randomUUID()}
-              />
-              <label htmlFor="actualFare" className="text-sm font-semibold">
-                실제 택시요금
-              </label>
-              <input
-                id="actualFare"
-                name="actualFare"
-                type="number"
-                min={trip.escrowParticipantCount}
-                max="1000000"
-                step={trip.escrowParticipantCount}
-                required
-                className="app-input"
-                placeholder={`${trip.escrowParticipantCount}명으로 나누어떨어지는 금액`}
-              />
-              <p className="text-xs text-muted-foreground">
-                시연 안전 범위에서는 확정 인원으로 나누어떨어지는 금액을 사용합니다.
-              </p>
-              <PendingSubmitButton pendingLabel="요금 등록 중...">
-                <Calculator className="size-5" aria-hidden />
-                참여자에게 요금 확인 요청
-              </PendingSubmitButton>
-            </form>
-          </Card>
-        ) : null}
 
         {settlement ? (
           <Card className="gap-3">

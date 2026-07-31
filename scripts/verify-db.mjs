@@ -47,6 +47,9 @@ const sprint6PointEscrowMigrationChecksum = createHash('sha256')
 const demoTripJourneyMigrationChecksum = createHash('sha256')
   .update(await readFile('db/migrations/0012_demo_trip_journey.sql'))
   .digest('hex')
+const hostArrivalSettlementMigrationChecksum = createHash('sha256')
+  .update(await readFile('db/migrations/0013_host_arrival_equal_split.sql'))
+  .digest('hex')
 
 if (
   !databaseUrl ||
@@ -154,6 +157,13 @@ try {
           AND checksum = $11
           AND environment = $1
       ) AS demo_trip_journey_migration_valid,
+      (
+        SELECT count(*) = 1
+        FROM schema_migrations
+        WHERE version = '0013_host_arrival_equal_split'
+          AND checksum = $12
+          AND environment = $1
+      ) AS host_arrival_settlement_migration_valid,
       (
         SELECT count(*) = 1
         FROM application_environment
@@ -414,15 +424,49 @@ try {
           )
           OR (p.no_show_at IS NULL) <> (p.no_show_marked_by IS NULL)
       ) AS demo_journey_participants_valid,
+      to_regclass('public.trip_settlement_participants') IS NOT NULL
+        AS settlement_participants_exists,
       (
         SELECT count(*) = 0
         FROM trip_settlements s
-        WHERE s.participant_count <> (
-          SELECT count(*)
+        WHERE s.status = 'COMPLETED'
+          AND EXISTS (
+            SELECT 1 FROM trip_settlement_participants sp
+            WHERE sp.trip_id = s.trip_id
+          )
+          AND s.participant_count <> (
+            SELECT count(*)
+            FROM trip_settlement_participants sp
+            WHERE sp.trip_id = s.trip_id
+          )
+      ) AS settlement_boarded_cohort_valid,
+      (
+        SELECT count(*) = 0
+        FROM trip_settlement_participants sp
+        LEFT JOIN trip_participants p
+          ON (p.trip_id, p.user_id) = (sp.trip_id, sp.user_id)
+        LEFT JOIN trip_deposits d
+          ON (d.trip_id, d.user_id) = (sp.trip_id, sp.user_id)
+        JOIN trip_settlements s ON s.trip_id = sp.trip_id
+        WHERE p.user_id IS NULL
+           OR d.amount IS DISTINCT FROM sp.deposit_amount
+           OR s.final_share IS DISTINCT FROM sp.final_share
+           OR s.cohort_basis <> 'BOARDED'
+      ) AS settlement_participant_snapshots_valid,
+      (
+        SELECT count(*) = 0
+        FROM (
+          SELECT d.trip_id, d.user_id
           FROM trip_deposits d
-          WHERE d.trip_id = s.trip_id
-        )
-      ) AS settlement_escrow_cohort_valid,
+          JOIN trip_settlements s ON s.trip_id = d.trip_id
+          JOIN point_ledger l
+            ON l.trip_id = d.trip_id
+           AND l.user_id = d.user_id
+          WHERE s.status = 'COMPLETED'
+          GROUP BY d.trip_id, d.user_id
+          HAVING sum(l.held_delta) <> 0
+        ) remaining
+      ) AS completed_trip_holds_released,
       EXISTS (
         SELECT 1
         FROM pg_trigger
@@ -442,6 +486,7 @@ try {
     recommendationCapacityMigrationChecksum,
     sprint6PointEscrowMigrationChecksum,
     demoTripJourneyMigrationChecksum,
+    hostArrivalSettlementMigrationChecksum,
   ])
 
   const verification = result.rows[0]
