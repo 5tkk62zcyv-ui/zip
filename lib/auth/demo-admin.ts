@@ -5,8 +5,10 @@ export function isDemoAdminLoginAllowed(input: {
   studentId: string
   name: string
   enabled: string | undefined
+  nodeEnv: string | undefined
 }) {
   return (
+    input.nodeEnv !== 'production' &&
     input.enabled === 'true' &&
     input.studentId === DEMO_ADMIN_STUDENT_ID &&
     input.name === DEMO_ADMIN_NAME

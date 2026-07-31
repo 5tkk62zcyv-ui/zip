@@ -36,6 +36,7 @@ export async function loginAction(
     studentId: parsed.data.studentId,
     name: parsed.data.name,
     enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
+    nodeEnv: process.env.NODE_ENV,
   })
 
   try {

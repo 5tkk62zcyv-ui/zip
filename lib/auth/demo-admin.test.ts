@@ -8,6 +8,7 @@ describe('isDemoAdminLoginAllowed', () => {
         studentId: '123456789',
         name: '택시타쉐어관리자',
         enabled: 'true',
+        nodeEnv: 'development',
       }),
     ).toBe(true)
   })
@@ -18,6 +19,18 @@ describe('isDemoAdminLoginAllowed', () => {
         studentId: '123456789',
         name: '택시타쉐어관리자',
         enabled: undefined,
+        nodeEnv: 'development',
+      }),
+    ).toBe(false)
+  })
+
+  it('blocks the demo admin login in production even when the flag is enabled', () => {
+    expect(
+      isDemoAdminLoginAllowed({
+        studentId: '123456789',
+        name: '택시타쉐어관리자',
+        enabled: 'true',
+        nodeEnv: 'production',
       }),
     ).toBe(false)
   })
@@ -28,6 +41,7 @@ describe('isDemoAdminLoginAllowed', () => {
         studentId: '123456788',
         name: '택시타쉐어관리자',
         enabled: 'true',
+        nodeEnv: 'development',
       }),
     ).toBe(false)
   })

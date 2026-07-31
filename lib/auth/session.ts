@@ -117,6 +117,7 @@ export async function requireAdmin() {
       studentId: user.studentId,
       name: user.name,
       enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
+      nodeEnv: process.env.NODE_ENV,
     })
   ) {
     redirect('/home')
