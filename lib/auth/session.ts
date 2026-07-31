@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { createHash, createHmac, randomBytes } from 'node:crypto'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import {
   ensureDatabaseIdentity,
@@ -111,16 +111,18 @@ export async function requireCompleteUser() {
 export async function requireAdmin() {
   const user = await requireCompleteUser()
   if (user.role !== 'ADMIN') redirect('/home')
-  if (
-    user.studentId === DEMO_ADMIN_STUDENT_ID &&
-    !isDemoAdminLoginAllowed({
-      studentId: user.studentId,
-      name: user.name,
-      enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
-      nodeEnv: process.env.NODE_ENV,
-    })
-  ) {
-    redirect('/home')
+  if (user.studentId === DEMO_ADMIN_STUDENT_ID) {
+    const requestHost = (await headers()).get('host')
+    if (
+      !isDemoAdminLoginAllowed({
+        studentId: user.studentId,
+        name: user.name,
+        enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
+        host: requestHost,
+      })
+    ) {
+      redirect('/home')
+    }
   }
   return user
 }

@@ -1,5 +1,6 @@
 'use server'
 
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ensureDatabaseIdentity, getDatabase } from '@/lib/db/client'
 import {
@@ -32,11 +33,12 @@ export async function loginAction(
   const tokenHash = hashSessionToken(token)
   const expiresAt = getSessionExpiry()
   let authenticatedRole: 'USER' | 'ADMIN' = 'USER'
+  const requestHost = (await headers()).get('host')
   const demoAdminAllowed = isDemoAdminLoginAllowed({
     studentId: parsed.data.studentId,
     name: parsed.data.name,
     enabled: process.env.DEMO_ADMIN_LOGIN_ENABLED,
-    nodeEnv: process.env.NODE_ENV,
+    host: requestHost,
   })
 
   try {
